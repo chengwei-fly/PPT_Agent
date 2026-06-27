@@ -1,0 +1,136 @@
+
+[project]
+name = "agentscope"
+dynamic = ["version"]
+description = "AgentScope: A Flexible yet Robust Multi-Agent Platform."
+readme = "README.md"
+authors = [
+    { name = "SysML team of Alibaba Tongyi Lab", email = "gaodawei.gdw@alibaba-inc.com" }
+]
+license = "Apache-2.0"
+keywords = ["agent", "multi-agent", "LLM", "AI"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "aioitertools",
+    "anthropic",
+    "dashscope",
+    "docstring_parser",
+    "filetype",
+    "json5",
+    "json_repair",
+    "mcp",
+    "httpx",
+    "numpy",
+    "openai",
+    "python-datauri",
+    "opentelemetry-api>=1.39.0",
+    "opentelemetry-sdk>=1.39.0",
+    "opentelemetry-exporter-otlp>=1.39.0",
+    "opentelemetry-semantic-conventions>=0.60b0",
+    "python-socketio",
+    "shortuuid",
+    "python-frontmatter",
+    "jinja2",
+    "aiofiles",
+    "tree_sitter",
+    "tree_sitter_bash",
+    "jsonschema",
+]
+
+[project.optional-dependencies]
+# ------------ Model APIs ------------
+gemini = ["google-genai"]
+ollama = ["ollama>=0.5.4"]
+xai = ["xai-sdk"]
+models = [
+    "agentscope[ollama]",
+    "agentscope[gemini]",
+    "agentscope[xai]",
+]
+# ------------ Service ------------
+service = [
+    "fastapi",
+    "uvicorn",
+    "apscheduler",
+    "ag-ui-protocol>=0.1.10",
+]
+# ------------ Storage ------------
+storage = [
+    "redis",
+]
+# ------------ Workspace -----------
+workspace = [
+    "aiodocker",
+    "e2b",
+]
+# ------------ Tools ------------
+tools = [
+    "ripgrep",
+]
+
+# ------------ Long-term memory ------------
+# Required by `agentscope.middleware._longterm_memory.Mem0Middleware`.
+# Pinned to mem0 v2.x because the middleware targets that
+# architecture: ADDITIVE_EXTRACTION_PROMPT + AGENT_CONTEXT_SUFFIX
+# (replaced v1's USER/AGENT_MEMORY_EXTRACTION_PROMPT split) and the
+# v3 phased pipeline in `_add_to_vector_store`. Running on mem0 1.x
+# wouldn't crash but the 2-tier add fallback degenerates into a
+# wasted LLM call.
+mem0 = ["mem0ai>=2.0.0"]
+# ------------ Full ------------
+full = [
+    "agentscope[models]",
+    "agentscope[service]",
+    "agentscope[storage]",
+    "agentscope[workspace]",
+    "agentscope[tools]",
+    "agentscope[mem0]",
+]
+
+# ------------ Development ------------
+dev = [
+    # Include full dependencies from local package
+    "agentscope[full]",
+    # Development tools
+    "pre-commit",
+    "pytest",
+    "pytest-forked",
+    "myst_parser",
+    "matplotlib",
+    "fakeredis",
+]
+
+[project.urls]
+Homepage = "https://github.com/agentscope-ai/agentscope"
+Documentation = "https://doc.agentscope.io/"
+Repository = "https://github.com/agentscope-ai/agentscope"
+
+[tool.setuptools]
+packages = { find = { where = ["src"] } }
+include-package-data = true
+
+[tool.setuptools.package-data]
+# ``"*"`` applies to every discovered package. Patterns:
+# - ``py.typed`` marks the typed package per PEP 561.
+# - ``_models/*.yaml`` reaches into the data-only ``_models/``
+#   subdirs that ship with each model provider (they have no
+#   ``__init__.py`` and are not packages, but the files still
+#   live alongside the parent package's source on disk).
+"*" = ["py.typed", "_models/*.yaml", "_cosyvoice_models/*.yaml"]
+"agentscope.workspace._docker" = ["Dockerfile*.template"]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "agentscope._version.__version__"}

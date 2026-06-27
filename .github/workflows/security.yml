@@ -1,0 +1,131 @@
+name: Security Scan
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "backend/src/**"
+      - "frontend/src/**"
+      - "backend/pyproject.toml"
+      - "frontend/package.json"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/src/**"
+      - "frontend/src/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+
+jobs:
+  # ─── Python security: bandit + safety ─────────────────────────────
+  python-security:
+    name: "Python Security"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Bandit — static analysis
+        working-directory: backend
+        run: |
+          uv sync --frozen --extra dev
+          uv run bandit -r src \
+            -f json -o bandit-report.json \
+            --severity-level medium \
+            --confidence-level medium || true
+          uv run bandit -r src \
+            --severity-level medium \
+            --confidence-level medium
+          echo "### Bandit Results" >> $GITHUB_STEP_SUMMARY
+          uv run bandit -r src \
+            -f json --severity-level medium \
+            --confidence-level medium | python -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          metrics = data.get('metrics', {}).get('_totals', {})
+          print(f'Issues: {metrics.get(\"SEVERITY.HIGH\", 0)} high, {metrics.get(\"SEVERITY.MEDIUM\", 0)} medium, {metrics.get(\"SEVERITY.LOW\", 0)} low')
+          " >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: backend/bandit-report.json
+          if-no-files-found: ignore
+
+  # ─── Node.js security: npm audit ─────────────────────────────────
+  node-security:
+    name: "Node.js Security"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+
+      - name: npm audit (production deps)
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --prod --audit-level=high
+
+      - name: npm audit (all deps, advisory only)
+        working-directory: frontend
+        if: always()
+        run: pnpm audit --audit-level=moderate || true
+
+  # ─── Dependency license check ─────────────────────────────────────
+  license-check:
+    name: "License Compliance"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Check Python licenses
+        working-directory: backend
+        run: |
+          uv sync --frozen
+          uv pip install pip-licenses
+          uv run pip-licenses --from=virtualenv --format=json --with-urls | python -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          blocked = ['GPL-3.0', 'AGPL-3.0', 'SSPL-1.0']
+          violations = [d for d in data if d.get('License', '') in blocked]
+          if violations:
+              print('BLOCKED LICENSES FOUND:')
+              for v in violations:
+                  print(f'  {v[\"Name\"]}: {v[\"License\"]}')
+              sys.exit(1)
+          print(f'All {len(data)} dependencies OK')
+          "

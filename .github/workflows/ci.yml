@@ -1,0 +1,237 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "001-mvp-closed-loop"]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # Stage 1: Lint (Python ruff + mypy, TS eslint + tsc)
+  # ─────────────────────────────────────────────────────────────────────
+  lint:
+    name: "1. Lint"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Ruff (backend)
+        working-directory: backend
+        run: |
+          uv sync --frozen
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint + typecheck (frontend)
+        working-directory: frontend
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Stage 2: Unit tests
+  # ─────────────────────────────────────────────────────────────────────
+  unit:
+    name: "2. Unit Tests"
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pptagent
+          POSTGRES_PASSWORD: pptagent
+          POSTGRES_DB: pptagent_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pptagent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with: { python-version: ${{ env.PYTHON_VERSION }} }
+
+      - uses: astral-sh/setup-uv@v3
+
+      - name: Backend unit tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://pptagent:pptagent@localhost:5432/pptagent_test
+          REDIS_URL: redis://localhost:6379/0
+          OPENAI_API_KEY: test-key
+        run: |
+          uv sync --frozen --extra dev
+          uv run pytest tests/unit -m "not integration and not e2e and not perf" --cov --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: backend/coverage.xml
+          flags: unit
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Stage 3: Contract tests (Pact)
+  # ─────────────────────────────────────────────────────────────────────
+  contract:
+    name: "3. Contract Tests"
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: ${{ env.PYTHON_VERSION }} }
+      - uses: astral-sh/setup-uv@v3
+
+      - name: Verify Pact contracts
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://pptagent:pptagent@localhost:5432/pptagent_test
+        run: |
+          uv sync --frozen --extra dev
+          uv run pytest tests/contract -v
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Stage 4: Integration / E2E (with full docker compose stack)
+  # ─────────────────────────────────────────────────────────────────────
+  e2e:
+    name: "4. Integration + E2E"
+    runs-on: ubuntu-latest
+    needs: contract
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: pptagent
+          POSTGRES_PASSWORD: pptagent
+          POSTGRES_DB: pptagent_test
+        ports: ["5432:5432"]
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports: ["9000:9000", "9001:9001"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: ${{ env.PYTHON_VERSION }} }
+      - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+      - name: Install pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+
+      - name: Backend integration
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://pptagent:pptagent@localhost:5432/pptagent_test
+          REDIS_URL: redis://localhost:6379/0
+          S3_ENDPOINT: localhost:9000
+          S3_ACCESS_KEY: minioadmin
+          S3_SECRET_KEY: minioadmin
+          OPENAI_API_KEY: test-key
+        run: |
+          uv sync --frozen --extra dev
+          uv run alembic upgrade head
+          uv run pytest tests/integration -v
+
+      - name: Playwright e2e
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps
+          pnpm run test:e2e
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Stage 5: Security scan (bandit + npm audit)
+  # ─────────────────────────────────────────────────────────────────────
+  security:
+    name: "5. Security Scan"
+    runs-on: ubuntu-latest
+    needs: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: ${{ env.PYTHON_VERSION }} }
+      - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ env.NODE_VERSION }} }
+
+      - name: Bandit (Python)
+        working-directory: backend
+        run: |
+          uv sync --frozen --extra dev
+          uv run bandit -r src -f json -o bandit-report.json || true
+          uv run bandit -r src
+
+      - name: npm audit
+        working-directory: frontend
+        run: |
+          npm install -g pnpm@${{ env.PNPM_VERSION }}
+          pnpm install --frozen-lockfile
+          pnpm audit --prod --audit-level=high
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Stage 6: Token budget validation (per spec SC-001 / SC-009)
+  # ─────────────────────────────────────────────────────────────────────
+  token-budget:
+    name: "6. Token Budget"
+    runs-on: ubuntu-latest
+    needs: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: ${{ env.PYTHON_VERSION }} }
+      - uses: astral-sh/setup-uv@v3
+      - name: Token budget validation
+        working-directory: backend
+        env:
+          OPENAI_API_KEY: test-key
+        run: |
+          uv sync --frozen --extra dev
+          uv run pytest tests/integration/test_token_budget.py -v

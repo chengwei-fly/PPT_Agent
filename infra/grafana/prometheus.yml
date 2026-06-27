@@ -1,0 +1,27 @@
+# Prometheus configuration for PPTagent MVP
+# Per spec FR-024 / SC-012: SLA dashboard with request_id × feature dimensions.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'pptagent-backend'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: backend
+          tier: api
+
+  - job_name: 'pptagent-worker'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['worker:8001']
+        labels:
+          service: worker
+          tier: background
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

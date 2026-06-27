@@ -1,0 +1,185 @@
+# WebSocket 事件契约 — PPTagent MVP
+# Endpoint: wss://api.pptagent.example.com/api/v1/ws
+# 子协议: graphql-ws (订阅风格)
+# 鉴权: 握手时通过 Authorization: Bearer <key> 头
+
+# ─── 客户端发送（订阅）───
+
+client.subscribes:
+  - channel: "task:{task_id}"
+    description: 订阅某个生成任务的实时事件
+  - channel: "user:{user_id}:queue"
+    description: 订阅当前用户的队列位置变化（FR-029）
+  - channel: "draft:{draft_id}"
+    description: US6：订阅某草稿的实时状态（锁 / 保存 / 导出进度 / 风格归一）
+  - channel: "user:{user_id}:materials"
+    description: US6：订阅素材库索引完成通知（新上传样本解析完毕）
+
+# ─── 服务端推送事件 ───
+
+server.emits:
+  - name: "task.stage.started"
+    payload:
+      type: object
+      required: [task_id, stage_name, started_at]
+      properties:
+        task_id: { type: string, format: uuid }
+        stage_name: { type: string, enum: [outline, points, svg, pptx] }
+        started_at: { type: string, format: date-time }
+
+  - name: "task.stage.finished"
+    payload:
+      type: object
+      required: [task_id, stage_name, status, duration_ms]
+      properties:
+        task_id: { type: string, format: uuid }
+        stage_name: { type: string, enum: [outline, points, svg, pptx] }
+        status: { type: string, enum: [success, failed] }
+        duration_ms: { type: integer }
+        output_summary: { type: string, maxLength: 500 }
+        referenced_sample_ids:
+          type: array
+          items: { type: string, format: uuid }
+
+  - name: "task.finished"
+    payload:
+      type: object
+      required: [task_id, status, token_consumed]
+      properties:
+        task_id: { type: string, format: uuid }
+        status: { type: string, enum: [success, failed, cancelled] }
+        result_pptx_url: { type: string, format: uri, nullable: true }
+        style_fit_score: { $ref: '#/components/schemas/StyleFitScore' }   # 见 openapi.yaml
+        error_message: { type: string, nullable: true }
+        token_consumed: { type: integer }
+
+  - name: "task.preference.applied"
+    payload:
+      type: object
+      required: [task_id, preference_id, rationale]
+      properties:
+        task_id: { type: string, format: uuid }
+        preference_id: { type: string, example: P-007 }
+        rationale: { type: string, description: SC-008 明示依据 }
+        applies_to: { type: string, enum: [cover, toc, body, closing] }
+
+  - name: "queue.position_changed"
+    payload:
+      type: object
+      required: [user_id, position, eta_seconds]
+      properties:
+        user_id: { type: string, format: uuid }
+        task_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 1 }
+        eta_seconds: { type: integer, minimum: 0 }
+        # FR-029 队列 5 分钟未执行自动取消的截止时间
+        queue_deadline_at: { type: string, format: date-time }
+
+  - name: "security.event.created"
+    payload:
+      type: object
+      required: [event_type, action_taken]
+      properties:
+        event_type: { type: string, enum: [pii_hit, pii_blocked, pii_replaced, pii_acknowledged, unauth_access, bulk_export, bulk_delete] }
+        hit_field: { type: string, nullable: true }
+        action_taken: { type: string, enum: [replace, block, allow] }
+        related_resource_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+
+  # ─── US6 草稿 / 素材事件 ───
+  - name: "draft.locked"
+    payload:
+      type: object
+      required: [draft_id, editor_user_id, expires_at]
+      properties:
+        draft_id: { type: string, format: uuid }
+        editor_user_id: { type: string, format: uuid }
+        acquired_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, description: '30 分钟后自动过期' }
+
+  - name: "draft.unlocked"
+    payload:
+      type: object
+      required: [draft_id, reason]
+      properties:
+        draft_id: { type: string, format: uuid }
+        reason: { type: string, enum: [manual, timeout, export_done] }
+
+  - name: "draft.saved"
+    payload:
+      type: object
+      required: [draft_id, revision, last_saved_at]
+      properties:
+        draft_id: { type: string, format: uuid }
+        revision: { type: integer, description: 乐观锁新值 }
+        last_saved_at: { type: string, format: date-time }
+        slide_count: { type: integer }
+
+  - name: "draft.slide.inserted"
+    payload:
+      type: object
+      required: [draft_id, slide_id, source_type]
+      properties:
+        draft_id: { type: string, format: uuid }
+        slide_id: { type: string, format: uuid }
+        source_type: { type: string, enum: [reused, generated, manual] }
+        source_asset_id: { type: string, format: uuid, nullable: true }
+        source_stage_id: { type: string, format: uuid, nullable: true }
+        style_normalized: { type: boolean }
+        normalized_failed: { type: boolean }
+
+  - name: "draft.exported"
+    payload:
+      type: object
+      required: [draft_id, job_id, status]
+      properties:
+        draft_id: { type: string, format: uuid }
+        job_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, running, ready, failed] }
+        download_url: { type: string, format: uri, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        error: { type: object, additionalProperties: true, nullable: true }
+
+  - name: "material.indexed"
+    payload:
+      type: object
+      required: [sample_id, asset_count]
+      properties:
+        sample_id: { type: string, format: uuid }
+        asset_count: { type: integer, description: 本次抽取的素材页数 }
+        indexed_at: { type: string, format: date-time }
+        visual_type_distribution:
+          type: object
+          additionalProperties: { type: integer }
+          example: { architecture: 3, flowchart: 2, body: 8 }
+
+# ─── 错误帧 ───
+
+server.error:
+  code: { type: string }
+  message: { type: string }
+  recoverable: { type: boolean, default: true }
+  examples:
+    - code: "WS_AUTH_FAILED"
+      message: "API Key 无效或过期"
+      recoverable: false
+    - code: "WS_RATE_LIMIT"
+      message: "订阅频率超限，请降低订阅频率"
+      recoverable: true
+    - code: "WS_TASK_NOT_FOUND"
+      message: "订阅的 task_id 不存在或不属于当前用户"
+      recoverable: false
+
+# ─── 频率限制 ───
+
+rate_limits:
+  subscribe_per_minute: 30
+  emit_per_task_per_minute: 120
+
+# ─── 心跳 ───
+
+heartbeat:
+  interval_seconds: 25
+  server_payload: "ping"
+  client_payload: "pong"
+  timeout_seconds: 60

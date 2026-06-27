@@ -1,0 +1,200 @@
+# RFC 7807 错误码 — PPTagent MVP
+# 顶层字段固定，type URI 形如 https://docs.pptagent.example.com/errors/{code}
+
+format:
+  type: string         # URI, 错误类型文档
+  title: string        # 人类可读标题
+  status: integer      # HTTP 状态码
+  detail: string       # 人类可读描述
+  code: string         # PPTagent 自定义短码，前端可本地化映射
+  instance: string     # 具体错误实例 URI（如 /api/v1/generations/{id}）
+
+errors:
+
+  # ─── 4xx 客户端错误 ───
+
+  - code: PPTAGENT.BAD_REQUEST
+    status: 400
+    title: 请求参数错误
+    detail: 请求体缺少必填字段或字段值越界
+    when:
+      - "POST /generations prompt 为空"
+      - "POST /samples/batch files 数量 > 20"
+
+  - code: PPTAGENT.UNAUTHORIZED
+    status: 401
+    title: 未认证
+    detail: API Key 缺失或无效
+    when:
+      - "请求未携带 Authorization 头"
+      - "API Key 哈希校验失败"
+
+  - code: PPTAGENT.IDEMPOTENCY_MISMATCH
+    status: 422
+    title: 幂等键与已存请求不匹配
+    detail: 24h 内同一 Idempotency-Key 已被另一请求占用；键值与请求体不匹配
+    when:
+      - "POST /generations 携带 Idempotency-Key，但 body 与首次不同"
+      - "POST /samples/batch 重复 key 但文件内容哈希不同"
+    recommended_action: 客户端应使用新 Idempotency-Key 或保持 body 一致
+
+  - code: PPTAGENT.FORBIDDEN
+    status: 403
+    title: 无权访问
+    detail: 资源不属于当前用户
+    when:
+      - "访问他用户的 sample_id / task_id"
+
+  - code: PPTAGENT.NOT_FOUND
+    status: 404
+    title: 资源不存在
+    detail: 资源 ID 不存在或已删除
+    when:
+      - "GET /generations/{id} 但任务不存在"
+
+  - code: PPTAGENT.CONFLICT.STATE
+    status: 409
+    title: 状态冲突
+    detail: 资源当前状态不允许该操作
+    when:
+      - "取消已 success 的任务"
+      - "重做已 archived 任务的阶段"
+
+  - code: PPTAGENT.PAYLOAD_TOO_LARGE
+    status: 413
+    title: 请求体超限
+    detail: 单文件 > 50MB
+    when:
+      - "POST /samples/batch 包含 > 50MB 单文件"
+
+  - code: PPTAGENT.RATE_LIMIT
+    status: 429
+    title: 频率/并发超限
+    detail: 触发速率限制或单用户并发超限
+    when:
+      - "同一用户第 3 个并发生成任务（FR-029 入队，但 prompt 超阈值会 429）"
+      - "API Key 速率限制（每分钟 > 60 次）"
+      - "Token 配额耗尽"
+
+  # ─── US6 素材 / 草稿错误码 ───
+
+  - code: PPTAGENT.MATERIAL_IN_USE
+    status: 409
+    title: 素材正在被草稿引用
+    detail: 该素材至少被一个 active 草稿引用，禁止删除（避免历史溯源链断裂）
+    when:
+      - "DELETE /materials/{id} 但 draft_slides.source_asset_id 仍存在记录"
+    recommended_action: 先在草稿编辑器中替换或删除引用页，再重试
+
+  - code: PPTAGENT.MATERIAL_NOT_FOUND
+    status: 404
+    title: 素材不存在
+    detail: asset_id 不存在或不属于当前用户
+    when:
+      - "GET /materials/{id} 但资产已归档或归属其他用户"
+
+  - code: PPTAGENT.DRAFT_REVISION_MISMATCH
+    status: 409
+    title: 草稿乐观锁失败
+    detail: 客户端 last_saved_revision 与服务端不一致；存在并发写冲突
+    when:
+      - "PATCH /drafts/{id} expected_revision 与 drafts.last_saved_revision 不匹配"
+      - "PATCH /drafts/{id}/slides/{sid} expected_revision 不匹配"
+    recommended_action: 重新拉取草稿详情，合并本地修改后用新 revision 重试
+
+  - code: PPTAGENT.DRAFT_LOCKED
+    status: 423
+    title: 草稿被其他用户锁定
+    detail: FR-035 单写者锁；当前用户对该草稿的写操作被拒绝
+    when:
+      - "PATCH /drafts/{id} 但 editor_user_id 属于其他用户"
+      - "POST /materials/{id}/insert 但草稿被他人锁定"
+    lock_ttl_seconds: 1800
+    recommended_action: 等待锁过期（30 分钟）或与锁定方协调后释放
+
+  - code: PPTAGENT.NORMALIZATION_FAILED
+    status: 422
+    title: 风格归一失败
+    detail: 复用素材的色板/字体/版式无法对齐草稿整体风格，已降级为"未归一"原样插入
+    when:
+      - "POST /materials/{id}/insert enable_style_normalize=true 但色板/字体冲突"
+    recommended_action: 客户端可降级为关闭归一（enable_style_normalize=false）以原样保留
+
+  - code: PPTAGENT.DRAFT_EMPTY
+    status: 422
+    title: 草稿无可导出的页
+    detail: 当前草稿 slide_count = 0，不允许导出
+    when:
+      - "POST /drafts/{id}/export 但 slide_count = 0"
+
+  - code: PPTAGENT.DRAFT_SOURCE_CONFLICT
+    status: 422
+    title: 来源引用冲突
+    detail: source_type 与 source_asset_id / source_stage_id 三选一不匹配
+    when:
+      - "PATCH /drafts/{id}/slides source_type=reused 但 source_asset_id 为空"
+      - "source_type=generated 但 source_stage_id 为空"
+
+  # ─── 5xx 服务端错误 ───
+
+  - code: PPTAGENT.INTERNAL
+    status: 500
+    title: 内部错误
+    detail: 未预期的服务端异常
+    when:
+      - "未捕获的 Python 异常"
+    retry_strategy: 指数退避，max 3 次
+
+  - code: PPTAGENT.UPSTREAM_LLM
+    status: 502
+    title: 上游 LLM 失败
+    detail: LLM 供应商返回错误或超时
+    when:
+      - "AgentScope 调用 LLM 超时 > 60s"
+      - "LLM 4xx/5xx 错误"
+    retry_strategy: 自动重试 1 次后写入 trace，由用户决定是否重做
+
+  - code: PPTAGENT.UPSTREAM_PPT_MASTER
+    status: 502
+    title: 生成引擎失败
+    detail: ppt-master SVG→DrawingML→PPTX 转换失败
+    when:
+      - "SVG 解析错误"
+      - "DrawingML 模板缺失"
+
+  - code: PPTAGENT.QUEUE_FULL
+    status: 503
+    title: 队列已满
+    detail: 系统级任务队列达到硬上限
+    when:
+      - "Redis Stream 长度 > 1000"
+    retry_strategy: 客户端退避 30s 重试
+
+  # ─── 业务语义错误（仍 4xx）───
+
+  - code: PPTAGENT.KB_EMPTY
+    status: 422
+    title: 知识库为空
+    detail: 用户尚未上传任何样本，无法生成
+    when:
+      - "POST /generations 但当前用户 sample 数量 = 0（FR-002）"
+
+  - code: PPTAGENT.SAMPLE_PARSE_FAILED
+    status: 422
+    title: 样本解析失败
+    detail: 上传的样本无法被解析
+    when:
+      - "PPTX 文件损坏 / PDF 加密 / DOCX 异常"
+
+  - code: PPTAGENT.PII_THRESHOLD
+    status: 422
+    title: PII 命中过多
+    detail: 单文档 PII 命中字段数 > 10，疑似文件异常
+    when:
+      - "FR-008 字段级处置 1 文档命中 > 10 个 PII 字段"
+    recovery: 引导用户人工确认或重新脱敏后上传
+
+# ─── 错误码变更规范 ───
+# - 新增错误码 MUST 更新此文件
+# - 错误码命名规则：PPTAGENT.<分类>.<短描述>
+# - 状态码变更需 7 天通知（写入 M2-W3 仪表盘公告）
