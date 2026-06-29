@@ -154,13 +154,13 @@ errors:
       - "LLM 4xx/5xx 错误"
     retry_strategy: 自动重试 1 次后写入 trace，由用户决定是否重做
 
-  - code: PPTAGENT.UPSTREAM_PPT_MASTER
+  - code: PPTAGENT.UPSTREAM_RENDERER
     status: 502
-    title: 生成引擎失败
-    detail: ppt-master SVG→DrawingML→PPTX 转换失败
+    title: PPTX 渲染失败
+    detail: AgentScope 2.0 工具链 PPTX 渲染失败
     when:
       - "SVG 解析错误"
-      - "DrawingML 模板缺失"
+      - "PPTX 渲染模板缺失"
 
   - code: PPTAGENT.QUEUE_FULL
     status: 503

@@ -25,7 +25,7 @@ class OrchestratorAgent:
         1. outline  — plan slide-by-slide structure
         2. points   — extract bullet content per slide
         3. svg      — render per-slide SVG payloads
-        4. pptx     — package SVGs into a final PPTX (via svg2pptx tool)
+        4. pptx     — package SVGs into a final PPTX (via pptx_renderer tool)
     """
 
     def __init__(self) -> None:

@@ -116,6 +116,92 @@ class LLMClient:
                 return json.loads(content[start:end].strip())
             raise
 
+    async def complete_vision(
+        self,
+        system_prompt: str,
+        user_text: str,
+        image_bytes: bytes,
+        image_mime: str = "image/jpeg",
+        temperature: float = 0.2,
+        max_tokens: int = 1000,
+    ) -> str:
+        """Multimodal chat completion. ``image_bytes`` is sent as a base64 data URL.
+
+        Compatible with OpenAI / DashScope (qwen-vl-*) / OpenRouter endpoints
+        that accept the OpenAI ``image_url`` content-block shape.
+        """
+        import base64
+
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        data_url = f"data:{image_mime};base64,{b64}"
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_text},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        data = await self._post(payload)
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"LLM returned empty choices: {data}")
+        content = choices[0].get("message", {}).get("content", "")
+        usage = data.get("usage", {})
+        logger.info(
+            "llm_complete_vision",
+            model=self.model,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+        )
+        return content
+
+    async def complete_json_vision(
+        self,
+        system_prompt: str,
+        user_text: str,
+        image_bytes: bytes,
+        image_mime: str = "image/jpeg",
+        temperature: float = 0.1,
+        max_tokens: int = 800,
+    ) -> dict[str, Any]:
+        """Vision + JSON response (best-effort). Falls back to text parsing on
+        providers that don't honour ``response_format`` with images.
+        """
+        raw = await self.complete_vision(
+            system_prompt=system_prompt,
+            user_text=user_text,
+            image_bytes=image_bytes,
+            image_mime=image_mime,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            if "```json" in raw:
+                start = raw.index("```json") + 7
+                end = raw.index("```", start)
+                return json.loads(raw[start:end].strip())
+            if "```" in raw:
+                start = raw.index("```") + 3
+                end = raw.index("```", start)
+                return json.loads(raw[start:end].strip())
+            # Last-ditch: try to find the first {...} JSON object
+            import re
+
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if m:
+                return json.loads(m.group(0))
+            raise
+
     async def _post(self, payload: dict) -> dict:
         """POST to the chat completions endpoint."""
         client = _get_client()

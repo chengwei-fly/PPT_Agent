@@ -18,6 +18,7 @@ def __getattr__(name: str):
         "security_router": "src.api.security",
         "traces_router": "src.api.traces",
         "ws_router": "src.api.ws",
+        "admin_router": "src.api.admin",
     }
     if name in router_map:
         import importlib

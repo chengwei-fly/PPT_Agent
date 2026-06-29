@@ -164,7 +164,7 @@ COMMUNICATION_MODES = [
 def _references_dir() -> Path | None:
     """Resolve the references directory."""
     try:
-        from src.integrations.svg_pptx_bridge import references_dir
+        from src.integrations.pptx_render_bridge import references_dir
 
         return Path(references_dir())
     except Exception:

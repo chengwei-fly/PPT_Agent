@@ -21,7 +21,7 @@
 **Purpose**: 项目骨架与开发工具链就位
 
 - [X] T001 [INFRA] Create monorepo directory tree (backend/, frontend/, infra/, scripts/) at repo root per plan.md §Project Structure
-- [X] T002 [INFRA] Initialize Python backend with `uv` in `backend/pyproject.toml`; lock `ppt-master @ git+...@<commit-sha>` and `agentscope==2.x.x` (Constitution §VII)
+- [X] T002 [INFRA] Initialize Python backend with `uv` in `backend/pyproject.toml`; lock `agentscope==2.x.x` (Constitution §VII)
 - [X] T003 [INFRA] Initialize React+Vite+TS frontend in `frontend/package.json`; add Tailwind+shadcn/ui per Constitution §技术栈
 - [X] T004 [INFRA] Author `infra/docker-compose.yml` with PostgreSQL 16 + pgvector, Redis 7, MinIO, jaeger per quickstart.md §1
 - [X] T005 [INFRA] Create `backend/.env.example` and `frontend/.env.example` (DB/Redis/MinIO/Jaeger endpoints + API key)
@@ -85,7 +85,7 @@
 - [X] T033 [CORE] [P] [US1] Create `GenerationTask` ORM model in `backend/src/db/models/generation_task.py` per data-model.md §6
 - [X] T034 [CORE] [P] [US1] Create `TraceStage` ORM model in `backend/src/db/models/trace_stage.py` per data-model.md §7
 - [X] T035 [CORE] [US1] Author Alembic migration `0002_generation.py` (tasks + trace_stages + enum types)
-- [X] T036 [CORE] [US1] Implement `SVG2PPTXTool` wrapping `ppt-master` in `backend/src/tools/svg2pptx.py` (FR-001 核心)
+- [X] T036 [CORE] [US1] Implement `PPTXRenderTool` based on AgentScope 2.0 tool interface in `backend/src/tools/pptx_renderer.py` (FR-001 核心)
 - [X] T037 [CORE] [US1] Implement `TraceMiddleware` in `backend/src/agents/middleware/trace_middleware.py` (writes TraceStage rows)
 - [X] T038 [CORE] [US1] Implement `ReActAgent` with 3 sub-tools (outline/points/svg) in `backend/src/agents/react_agent.py`
 - [X] T039 [CORE] [US1] Implement `OrchestratorAgent` (`HarnessAgent`) wrapping 4-stage pipeline in `backend/src/agents/orchestrator.py`
@@ -385,7 +385,7 @@ Foundational (T012–T029)
 ```bash
 # 并行：
 #   T033 (GenerationTask) + T034 (TraceStage) + T030, T031 (合同测试)
-#   T036 (SVG2PPTXTool) — 独立
+#   T036 (PPTXRenderTool) — 独立
 #   T037 (TraceMiddleware) 依赖 T034
 #   T038 (ReActAgent) 依赖 T037
 # 串行：

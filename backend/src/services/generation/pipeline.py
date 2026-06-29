@@ -23,7 +23,7 @@ from src.scheduler.queue import publish_ws_event
 from src.services.scoring.font_scorer import FontScorer
 from src.services.scoring.layout_scorer import LayoutScorer
 from src.services.scoring.palette_scorer import PaletteScorer
-from src.tools.svg2pptx import SVG2PPTXTool
+from src.tools.pptx_renderer import PPTXRenderTool
 
 logger = get_logger("pipeline")
 
@@ -37,7 +37,7 @@ class GenerationPipeline:
         self.session = session
         self.task_id = uuid.UUID(task_id)
         self.trace = TraceMiddleware(session)
-        self.svg2pptx = SVG2PPTXTool()
+        self.pptx_renderer = PPTXRenderTool()
 
     async def run(self) -> None:
         task = (
@@ -135,7 +135,7 @@ class GenerationPipeline:
         )
         await self._emit_ws(task.id, "pptx", "running")
         try:
-            pptx_payload = await self.svg2pptx.func(
+            pptx_payload = await self.pptx_renderer.func(
                 task_id=str(task.id), slides=svg_payload["slides"]
             )
             await self.trace.on_stage_finish(

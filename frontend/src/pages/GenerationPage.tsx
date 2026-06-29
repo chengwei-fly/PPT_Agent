@@ -296,7 +296,7 @@ function GenerationForm() {
               <p>• 上传附件（PDF / DOCX / PPTX）后，AI 会基于文档内容生成 PPT，无需手动整理素材。</p>
               <p>• 选择沟通模式可以控制叙事结构（金字塔、故事线、教学式等）。</p>
               <p>• 选择视觉风格可以控制设计语言（瑞士极简、暗黑科技、编辑排版等）。</p>
-              <p>• 生成的 PPTX 使用原生 DrawingML 形状，可在 PowerPoint 中直接编辑。</p>
+              <p>• 生成的 PPTX 使用原生可编辑形状，可在 PowerPoint 中直接编辑。</p>
             </>
           ) : (
             <>

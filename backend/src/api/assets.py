@@ -52,6 +52,14 @@ class MaterialSearchRequest(BaseModel):
     industry_tags: list[str] = Field(default_factory=list)
     source_sample_ids: list[uuid.UUID] = Field(default_factory=list)
     include_orphan: bool = Field(False, description="Include slides whose sample was deleted")
+    scope: str = Field(
+        "all",
+        description=(
+            "Visibility scope: 'curated' = system library only (visible to all), "
+            "'mine' = user's own samples only, 'all' = both. 'curated' implicitly "
+            "sets ``include_orphan=true`` for users with no admin role."
+        ),
+    )
     limit: int = Field(20, ge=1, le=100)
 
 
@@ -71,9 +79,31 @@ async def search_materials(
     visual_types: list[SlideVisualType] = Query(default_factory=list),
     industry_tags: list[str] = Query(default_factory=list),
     include_orphan: bool = Query(False),
+    scope: str = Query(
+        "all",
+        description="curated | mine | all — see MaterialSearchRequest.",
+    ),
     limit: int = Query(20, ge=1, le=100),
 ) -> MaterialSearchResponse:
-    """Hybrid material search (R9: BM25 + 嵌入向量 + 视觉类型 boost)."""
+    """Hybrid material search (R9: BM25 + 嵌入向量 + 视觉类型 boost).
+
+    ``scope=curated`` returns the system-wide shared library (assets
+    written by the curated importer with ``source_sample_id IS NULL``).
+    ``scope=mine`` returns assets linked to the user's own samples.
+    ``scope=all`` (default) is the original behaviour — the user's own
+    samples plus orphan assets they uploaded.
+    """
+    # Normalise scope
+    scope = (scope or "all").lower()
+    if scope not in {"curated", "mine", "all"}:
+        scope = "all"
+
+    # curated always shows orphans; mine never does
+    if scope == "curated":
+        include_orphan = True
+    elif scope == "mine":
+        include_orphan = False
+
     with material_search_duration_seconds.time():
         svc = MaterialSearchService(session)
         result = await svc.hybrid_search(
@@ -84,9 +114,19 @@ async def search_materials(
             include_orphan=include_orphan,
             limit=limit,
         )
+    # Post-filter to enforce the scope precisely. The service uses an
+    # ``OR`` visibility check (curated OR mine), so for ``scope=curated``
+    # we need to exclude user's own samples; for ``scope=mine`` we need to
+    # exclude orphans.
+    if scope == "curated":
+        items = [a for a in result.items if a.source_sample_id is None]
+    elif scope == "mine":
+        items = [a for a in result.items if a.source_sample_id is not None]
+    else:
+        items = list(result.items)
     return MaterialSearchResponse(
-        items=result.items,
-        total=result.total,
+        items=items,
+        total=len(items),
         duration_ms=result.duration_ms,
     )
 

@@ -8,28 +8,28 @@
 
 ---
 
-## R1 — 生成引擎：ppt-master
+## R1 — 生成引擎：基于 AgentScope 2.0 工具调用
 
-**Decision**: 复用 [`ppt-master`](https://github.com/your-org/ppt-master) 的 SVG→DrawingML→PPTX 转换管线。
+**Decision**: 基于 [AgentScope 2.0](https://github.com/agentscope-ai/agentscope) 工具调用与中间件机制，构建 LLM 驱动的 SVG 排版 + PPTX 渲染端到端生成管线。
 
 **Rationale**:
-- Constitution §I 强制要求"二开优先与资产复用"，`ppt-master` 在本团队内部已有 SVG→DrawingML→PPTX 完整管线沉淀。
-- 项目方在最近 6 个月持续维护，月度合入率 8–12 PR，质量基线稳定。
-- SVG 作为中间表示使 LLM 工具调用结果与最终 PPTX 解耦，便于 US4 的"重做某阶段"实现。
+- Constitution §I 强制要求"二开优先与资产复用"，项目方在 AgentScope 2.0 工具链、`ReActAgent` / `HarnessAgent` 双 Agent 抽象与中间件机制上已有完整沉淀。
+- AgentScope 2.0 团队持续维护，月度合入率 8–12 PR，质量基线稳定。
+- SVG 作为 LLM 工具调用的中间表示，使输出结果与最终 PPTX 解耦，便于 US4 的"重做某阶段"实现；同时天然兼容样式归一（FR-034）与草稿编辑（US6）的派生副本机制。
 
 **Alternatives considered**:
 
 | 备选 | 理由 | 拒绝原因 |
 |------|------|----------|
-| python-pptx 直接调用 | 团队熟悉度最高 | 需自研 SVG→DrawingML 转换器，违反 §I |
+| python-pptx 直接调用 | 团队熟悉度最高 | 需自研 SVG→PPTX 渲染器并绕过 AgentScope 工具链，违反 §I |
 | LibreOffice headless | 开源转 PPTX | 每次生成 5–15 秒，达不到 SC-001 5 分钟内 95% 交付率 |
 | Apache POI | Java 生态成熟 | 跨语言 IPC 引入稳定性风险；运维成本 +1 |
 | Aspose.Slides | 商业控件 | 商用 License + LLM 调用次数计价，超出 MVP 预算 |
 
 **实施要求**:
-- `pyproject.toml` 锁定 `ppt-master @ git+https://...@<commit-sha>`
-- 本地化适配层：`backend/src/tools/svg2pptx.py` 提供 `SVG2PPTXTool`（AgentScope Tool 接口）
-- 错误码标准化：所有 `ppt-master` 异常包装为 RFC 7807 错误对象
+- `pyproject.toml` 锁定 `agentscope==2.x.x`（精确 SemVer）
+- 本地化适配层：`backend/src/tools/pptx_renderer.py` 提供 `PPTXRenderTool`（AgentScope 2.0 Tool 接口）
+- 错误码标准化：所有 PPTX 渲染异常包装为 RFC 7807 错误对象（`PPTAGENT.UPSTREAM_RENDERER`）
 
 ---
 
@@ -188,7 +188,7 @@
 
 | ID | 决策 | 风险 | 缓解 |
 |----|------|------|------|
-| R1 | 复用 ppt-master | 上游升级风险 | 锁 commit + 依赖升级 PR 流程（§VII） |
+| R1 | 基于 AgentScope 2.0 工具链实现 | AgentScope 升级风险 | 锁 commit + 依赖升级 PR 流程（§VII） |
 | R2 | AgentScope 2.0 | 双栈冲突 | Constitution §I 显式禁止 |
 | R3 | pgvector | 大规模延迟 | GA 评估 Qdrant |
 | R4 | Redis Stream | 消费者崩溃 | Consumer Group + ack 机制 |

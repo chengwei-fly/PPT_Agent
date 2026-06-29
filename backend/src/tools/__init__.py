@@ -17,7 +17,7 @@ def __getattr__(name: str):
         "PIIDetectorTool": "src.tools.pii_detector",
         "SampleParserTool": "src.tools.sample_parser",
         "StyleNormalizer": "src.tools.style_normalizer",
-        "SVG2PPTXTool": "src.tools.svg2pptx",
+        "PPTXRenderTool": "src.tools.pptx_renderer",
     }
     if name in tool_map:
         import importlib
@@ -30,7 +30,7 @@ def __getattr__(name: str):
 __all__ = [
     "KnowledgeRetriever",
     "PIIDetectorTool",
-    "SVG2PPTXTool",
+    "PPTXRenderTool",
     "SampleParserTool",
     "StyleNormalizer",
 ]

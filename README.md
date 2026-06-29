@@ -64,7 +64,7 @@ PPT_Agent/
 │   │   ├── scheduler/    # Redis queue worker
 │   │   ├── services/     # Business logic (generation, KB, scoring)
 │   │   ├── storage/      # MinIO client
-│   │   └── tools/        # SVG2PPTX, sample parser, PII detector
+│   │   └── tools/        # PPTX renderer, sample parser, PII detector
 │   ├── tests/            # Unit, contract, integration, e2e
 │   └── migrations/       # Alembic migration files
 ├── frontend/         # React 18 + TypeScript (Vite)
@@ -122,8 +122,8 @@ pnpm run gen:api         # Generate TypeScript API client from OpenAPI spec
 ```
 User prompt → Outline → Points → SVG → PPTX
                  ↓          ↓       ↓
-            Knowledge   ReAct Agent  SVG2PPTX
-            Retriever   (LLM calls)  Tool
+            Knowledge   ReAct Agent  PPTX
+            Retriever   (LLM calls)  Renderer
 ```
 
 ### Key Technologies

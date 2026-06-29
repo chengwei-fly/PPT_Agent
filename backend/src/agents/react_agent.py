@@ -4,7 +4,7 @@ Inherits from `agentscope.agent.Agent` and registers tools the
 LLM can call:
 
   - `knowledge_retriever` — pull top-k chunks from the user's KB
-  - `svg2pptx`            — package SVGs into a final PPTX
+  - `pptx_renderer`       — package SVGs into a final PPTX
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from src.integrations.agentscope_compat import (
     ReActAgent as _BaseReActAgent,
 )
 from src.tools.knowledge_retriever import KnowledgeRetriever
-from src.tools.svg2pptx import SVG2PPTXTool
+from src.tools.pptx_renderer import PPTXRenderTool
 
 logger = get_logger("react_agent")
 
@@ -41,7 +41,7 @@ class ReActAgent:
     def __init__(self, owner_id: uuid.UUID) -> None:
         self.owner_id = owner_id
         self._kb = KnowledgeRetriever(owner_id=owner_id)
-        self._svg2pptx = SVG2PPTXTool()
+        self._pptx_renderer = PPTXRenderTool()
 
         # Build the AgentScope ReActAgent. If the local AgentScope
         # import failed, `_BaseReActAgent.__init__` raises an
@@ -67,13 +67,13 @@ class ReActAgent:
                     func=self._kb.retrieve_async,
                 ),
                 Tool(
-                    name="svg2pptx",
+                    name="pptx_renderer",
                     description=(
                         "Package a list of slide SVGs into a final PPTX. "
                         "Converts SVG slides to PPTX format."
                     ),
-                    parameters=self._svg2pptx.parameters,
-                    func=self._svg2pptx.func,
+                    parameters=self._pptx_renderer.parameters,
+                    func=self._pptx_renderer.func,
                 ),
             ],
         )

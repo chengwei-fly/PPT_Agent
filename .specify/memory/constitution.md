@@ -2,7 +2,7 @@
   Version Change: 0.0.0 → 1.0.0
   Reason: Initial ratification for PPTagent project. Seven core principles established
     based on product feasibility report and secondary-development technical plan
-    (AgentScope 2.0 + SVG-to-PPTX engine 二开).
+    (基于 AgentScope 2.0 工具调用的二开).
   Principles Added (initial):
     - I.   二开优先与资产复用
     - II.  MVP 驱动与业务闭环
@@ -28,8 +28,9 @@
 
 ### I. 二开优先与资产复用 (Second-Development-First)
 PPTagent MUST 优先在成熟开源项目上做二次开发，而非从零自研。
-- 核心生成链路 MUST 复用 SVG→DrawingML→PPTX 转换管线，禁止另起一套平行
-  的 PPT 排版内核。
+- 核心生成链路 MUST 基于 `AgentScope 2.0` 的工具调用与中间件机制统一驱动
+  （LLM 生成 SVG 排版 → 渲染为 PPTX），禁止另起一套平行的生成管线或
+  绕过 AgentScope 工具链直连 LLM。
 - 智能体编排 MUST 基于 `AgentScope 2.0` 的 `ReActAgent` + `HarnessAgent` 双
   Agent 抽象，禁止引入与现有事件总线/中间件机制冲突的替代框架。
 - 任何新增的"自研"模块 MUST 在 spec/plan 中提供"为什么不能用现有 X"的明确
@@ -42,7 +43,7 @@ PPTagent MUST 优先在成熟开源项目上做二次开发，而非从零自研
 - MVP 定义：以"上传个人PPT → 一句话生成风格对齐的新PPT"为最小业务闭环。
 - 12 周开发周期 MUST 严格按四个里程碑推进，禁止在前一里程碑未结案前开
   启下一里程碑的非基础设施任务：
-  - M1（第 1–3 周）：生成链路（OrchestratorAgent + SVG2PPTXTool）
+  - M1（第 1–3 周）：生成链路（OrchestratorAgent + PPTXRenderTool）
   - M2（第 4–6 周）：个人知识库（解析入库 + 双模检索）
   - M3（第 7–9 周）：Agent 进化引擎（BehaviorMiddleware + PreferenceExtractor）
   - M4（第 10–12 周）：去AI味打磨、定价落地、私有化Beta 发布
@@ -113,8 +114,7 @@ RESTful + 长任务 WebSocket，错误码遵循 RFC 7807。
 + 中间件机制 + 统一事件总线）。禁止引入 LangChain / AutoGen 等同质框架
 造成双栈。
 
-**Generation Engine**：SVG→DrawingML→PPTX 转换管线，以
-`OrchestratorAgent` + `SVG2PPTXTool` 方式对接。
+**Generation Engine**：基于 `AgentScope 2.0` 工具调用的 LLM 驱动生成（SVG 排版 + PPTX 渲染），由 `OrchestratorAgent` + `PPTXRenderTool` 协同实现，工具结果与渲染过程都走 AgentScope 中间件链路。
 
 **Storage**：
 - 结构化数据：PostgreSQL 16

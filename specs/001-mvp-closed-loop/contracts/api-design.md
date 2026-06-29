@@ -480,7 +480,7 @@ redoc-cli bundle specs/001-mvp-closed-loop/contracts/openapi.yaml -o docs/api.ht
 
 | Constitution 条款 | 落地位置 |
 |--------------------|----------|
-| §I 二开优先 | API 层在 `ppt-master` 与 `AgentScope 2.0` 之上；不引入新框架 |
+| §I 二开优先 | API 层在 `AgentScope 2.0` 之上；不引入新框架 |
 | §II MVP 驱动 | v0.1 仅含 US1 端点即可演示 |
 | §III 可解释可控制 | `/trace` + `/stages/{name}/redo` 必为 v0.1 一部分 |
 | §IV 数据安全 | `data:export` / `data:delete-all` 必须二次确认；PII 字段响应脱敏 |

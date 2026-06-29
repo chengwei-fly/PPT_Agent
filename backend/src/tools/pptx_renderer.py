@@ -1,4 +1,4 @@
-"""SVG2PPTX tool — converts SVG slides to native PPTX format.
+"""PPTX render tool — packages SVG slides into a native PPTX file.
 
 Workflow:
 
@@ -9,7 +9,7 @@ Workflow:
   5. Clean up the temp dir.
 
 A `python-pptx` fallback is kept as a defensive measure for the
-case where the generation engine is unavailable (e.g. in CI).
+case where the rendering library is unavailable (e.g. in CI).
 """
 
 from __future__ import annotations
@@ -22,18 +22,18 @@ from pathlib import Path
 from typing import Any
 
 from src.core.observability import get_logger
-from src.integrations.svg_pptx_bridge import create_pptx_with_native_svg
+from src.integrations.pptx_render_bridge import create_pptx_with_native_svg
 from src.storage.minio import put_object, result_bucket
 
-logger = get_logger("svg2pptx")
+logger = get_logger("pptx_renderer")
 
 
-class SVG2PPTXTool:
-    name = "svg2pptx"
+class PPTXRenderTool:
+    name = "pptx_renderer"
     description = (
         "Convert a list of slide SVG payloads into a single PPTX file. "
-        "Uses the local SVG-to-PPTX generation engine via "
-        "`src.integrations.svg_pptx_bridge`."
+        "Uses the internal rendering library via "
+        "`src.integrations.pptx_render_bridge`."
     )
     parameters: dict[str, Any] = {
         "type": "object",
@@ -79,7 +79,7 @@ class SVG2PPTXTool:
     ) -> dict[str, Any]:
         start = time.perf_counter()
         if not slides:
-            raise ValueError("svg2pptx: slides must be non-empty")
+            raise ValueError("pptx_renderer: slides must be non-empty")
 
         # Sort by `order` defensively.
         slides = sorted(slides, key=lambda s: s.get("order", 0))
@@ -116,7 +116,7 @@ class SVG2PPTXTool:
                 )
             except Exception as e:
                 logger.exception(
-                    "svg_to_pptx_engine_failed",
+                    "pptx_renderer_failed",
                     task_id=task_id,
                     error=str(e),
                 )
@@ -130,7 +130,7 @@ class SVG2PPTXTool:
 
             if not ok or not out_path.is_file():
                 logger.error(
-                    "svg_to_pptx_engine_returned_false",
+                    "pptx_renderer_returned_false",
                     task_id=task_id,
                     output_exists=out_path.is_file(),
                 )
@@ -155,7 +155,7 @@ class SVG2PPTXTool:
         )
         duration_ms = int((time.perf_counter() - start) * 1000)
         logger.info(
-            "svg2pptx_engine_ok",
+            "pptx_renderer_ok",
             task_id=task_id,
             slide_count=len(slides),
             bytes=len(data),
@@ -166,7 +166,7 @@ class SVG2PPTXTool:
             "slide_count": len(slides),
             "bytes": len(data),
             "duration_ms": duration_ms,
-            "engine": "svg-to-pptx",
+            "engine": "pptx-renderer",
         }
 
     async def _fallback_pptx(
@@ -179,7 +179,7 @@ class SVG2PPTXTool:
     ) -> dict[str, Any]:
         """Defensive fallback — should never be hit in production.
 
-        Runs when the SVG-to-PPTX generation engine is unavailable
+        Runs when the internal rendering library is unavailable
         (e.g. a CI sandbox). The orchestrator surfaces a clear
         warning when this path is taken.
         """

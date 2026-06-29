@@ -10,7 +10,7 @@
 
 ## Summary
 
-构建面向"产品 / 方案人员"的垂类智能 PPT 生成平台 MVP 闭环：以"上传个人 PPT/PDF/Word → 一句话生成风格对齐的 PPT"为最小业务闭环，覆盖 M1（生成链路）→ M2（个人知识库）→ M3（Agent 进化引擎）→ M4（去 AI 味 + 私有化 Beta）四阶段 12 周路线图。技术路线在 `ppt-master`（生成引擎）与 `AgentScope 2.0`（编排框架）两个成熟开源项目上做二开，所有 AI 行为可解释、可回滚、可观测，所有用户数据安全前置。
+构建面向"产品 / 方案人员"的垂类智能 PPT 生成平台 MVP 闭环：以"上传个人 PPT/PDF/Word → 一句话生成风格对齐的 PPT"为最小业务闭环，覆盖 M1（生成链路）→ M2（个人知识库）→ M3（Agent 进化引擎）→ M4（去 AI 味 + 私有化 Beta）四阶段 12 周路线图。技术路线基于 `AgentScope 2.0`（多智能体编排框架）做二开，端到端生成链路（大纲 → 要点 → SVG 排版 → PPTX 渲染）由 AgentScope 2.0 的 `ReActAgent` + `HarnessAgent` 工具调用与中间件机制统一驱动，所有 AI 行为可解释、可回滚、可观测，所有用户数据安全前置。
 
 ---
 
@@ -23,7 +23,7 @@
 | **Frontend Framework** | React 18 + Vite + Tailwind CSS + shadcn/ui | Constitution §技术栈 |
 | **Backend Framework** | FastAPI + Uvicorn + Pydantic v2 | Constitution §技术栈 |
 | **Agent Framework** | AgentScope 2.0（`ReActAgent` + `HarnessAgent`） | Constitution §I |
-| **Generation Engine** | `ppt-master`（SVG→DrawingML→PPTX 管线） | Constitution §I |
+| **Generation Engine** | 基于 AgentScope 2.0 工具调用的 LLM 驱动生成（SVG 排版 + PPTX 渲染） | Constitution §I |
 | **Primary Database** | PostgreSQL 16 | Constitution §技术栈 |
 | **Vector Store** | pgvector（短期） | Constitution §技术栈 |
 | **Object Storage** | MinIO（开发）/ S3 兼容（生产） | Constitution §技术栈 |
@@ -52,13 +52,13 @@ PPTagent Constitution v1.0.0 合规性预检 — 每项 MUST 标记 ✅ / ⚠ / 
 
 | # | 原则 | 状态 | 落地点 |
 |---|------|------|--------|
-| **I** | 二开优先与资产复用 | ✅ | 核心生成 = `ppt-master` SVG→DrawingML→PPTX；Agent = `AgentScope 2.0` `ReActAgent` + `HarnessAgent`；不引入 LangChain/AutoGen |
+| **I** | 二开优先与资产复用 | ✅ | 核心生成 = 基于 AgentScope 2.0 工具调用的 SVG 排版 + PPTX 渲染；编排 = `AgentScope 2.0` `ReActAgent` + `HarnessAgent`；不引入 LangChain/AutoGen |
 | **II** | MVP 驱动与业务闭环 | ✅ | 12 周 / 4 里程碑分阶段（见 §Milestone Mapping），所有任务按 [CORE]/[KB]/[EVOL]/[INFRA] 标签归位 |
 | **III** | AI 生成可解释与可控制 | ✅ | FR-015/016 4 阶段生成轨迹；FR-017 撤销 / 锁定原文；FR-008 PII 字段级处置 |
 | **IV** | 数据安全与隐私前置 | ✅ | FR-008/009/018/019/020；PII 中间件 + 三类数据分离 + API Key 网关 |
 | **V** | Agent 行为可观测与可追溯 | ✅ | FR-022 三标签 trace；FR-023 运维指标；`ppt_render` / `preference_update` 等结构化事件 |
 | **VI** | 测试驱动与质量门禁 | ✅ | 6 阶段 CI（lint→单测→契约→端到端→安全→Token 预算）；5 种典型样本回归库 |
-| **VII** | 语义化版本与依赖锁定 | ✅ | 依赖 `ppt-master` / `AgentScope 2.0` 通过 `pyproject.toml` 锁文件固定 commit/tag；`MAJOR.MINOR.PATCH` 策略 |
+| **VII** | 语义化版本与依赖锁定 | ✅ | 依赖 `AgentScope 2.0` 通过 `pyproject.toml` 锁文件固定 commit/tag；`MAJOR.MINOR.PATCH` 策略 |
 
 > 无违规。Complexity Tracking 表留空。
 
@@ -125,7 +125,7 @@ backend/
 │   │       ├── trace_middleware.py
 │   │       └── behavior_middleware.py
 │   ├── tools/                  # Agent 可调用的 Tool
-│   │   ├── svg2pptx.py         # 对接 ppt-master
+│   │   ├── pptx_renderer.py    # SVG 排版 → PPTX 渲染（AgentScope 工具接口）
 │   │   ├── sample_parser.py    # PPTX/PDF/DOCX 解析
 │   │   ├── knowledge_retriever.py  # 双模检索
 │   │   └── pii_detector.py     # 独立 PII 工具
@@ -144,7 +144,7 @@ backend/
 │   ├── integration/            # 含 5 种典型样本的回归
 │   ├── e2e/                    # Playwright
 │   └── fixtures/samples/       # 真实样本库（汇报/培训/方案/数据/营销）
-├── pyproject.toml              # 锁文件：ppt-master commit / AgentScope 2.0 tag
+├── pyproject.toml              # 锁文件：AgentScope 2.0 tag
 └── Dockerfile
 
 frontend/
@@ -174,7 +174,7 @@ frontend/
 
 | 里程碑 | 周次 | 主线 | 核心交付 |
 |--------|------|------|----------|
-| **M1 生成链路** | W1–W3 | CORE | `OrchestratorAgent` + `SVG2PPTXTool` 端到端打通；US1 MVP；同时启动 US6 解析链路（SlideExtractor 抽页，PG 迁移 0007 表结构搭好但搜索服务不阻塞 M1） |
+| **M1 生成链路** | W1–W3 | CORE | `OrchestratorAgent` + `PPTXRenderTool` 端到端打通；US1 MVP；同时启动 US6 解析链路（SlideExtractor 抽页，PG 迁移 0007 表结构搭好但搜索服务不阻塞 M1） |
 | **M2 知识库** | W4–W6 | KB | 解析 + 双模检索；US2 闭环；FR-008 PII 中间件；**US6 素材库双路检索（BM25 + 嵌入）MVP**，交付 `GET /materials` 单页可用 |
 | **M3 Agent 进化** | W7–W9 | EVOL | `PreferenceExtractor` + `BehaviorMiddleware`；US3 + US4；**US6 草稿编辑 + 风格归一工具 + 单写者锁** |
 | **M4 打磨 / Beta** | W10–W12 | INFRA + QA | 风格契合度评分落地 + SLA 监控 + 私有化 Beta 候选 ≥ 3 家；US5；**US6 导出溯源（XMP）+ 索引同步 + 端到端素材复用回归套件** |
@@ -192,7 +192,7 @@ frontend/
 
 完整研究见 [research.md](file:///f:/workspace/PPT_Agent/specs/001-mvp-closed-loop/research.md)。关键决策：
 
-- **R1** Generation Engine → 复用 `ppt-master` 提 PR 加固 SVG→DrawingML→PPTX 适配（理由：项目方已有沉淀）
+- **R1** Generation Engine → 基于 AgentScope 2.0 工具调用实现 LLM 驱动的 SVG 排版 + PPTX 渲染（理由：复用项目方在 AgentScope 工具链与中间件机制上的沉淀）
 - **R2** Agent 框架 → 锁定 `AgentScope 2.0`，`ReActAgent` 处理 LLM 工具调用，`HarnessAgent` 包装多阶段流程
 - **R3** 向量库 → MVP 阶段 `pgvector`（运维成本最低），GA 评估独立向量库
 - **R4** 队列 → Redis Stream + FIFO 调度 + 5min 超时（FR-029）
@@ -223,13 +223,13 @@ frontend/
 
 | # | 原则 | 状态 | 备注 |
 |---|------|------|------|
-| **I** | 二开优先 | ✅ | `tools/svg2pptx.py` 显式 import `ppt-master`；`agents/` 显式继承 `AgentScope 2.0` 基类 |
+| **I** | 二开优先 | ✅ | `tools/pptx_renderer.py` 基于 AgentScope 2.0 工具接口实现；`agents/` 显式继承 `AgentScope 2.0` 基类 |
 | **II** | MVP 闭环 | ✅ | M1-M4 任务均与 spec FR 1:1 映射，无越界功能 |
 | **III** | 可解释可控制 | ✅ | `trace_stage` 实体记录 4 阶段；`preference` 实体记录来源片段链 |
 | **IV** | 数据安全前置 | ✅ | `db/models/` 分离 `raw_files` / `parse_results` / `embeddings` 三表；PII 中间件注册在中间件链首位 |
 | **V** | 可观测可追溯 | ✅ | `observability.py` 强制 OTel + `request_id` / `user_id` / `feature` 三标签；关键事件结构化字段见 `events.yaml` |
 | **VI** | 测试门禁 | ✅ | `tests/fixtures/samples/` 5 种真实样本；CI 6 阶段流水线在 `quickstart.md` §CI |
-| **VII** | 版本与依赖 | ✅ | `pyproject.toml` 中 `ppt-master` 与 `agentscope` 以 `=={commit}` 形式锁定 |
+| **VII** | 版本与依赖 | ✅ | `pyproject.toml` 中 `agentscope` 以 `=={commit}` 形式锁定 |
 
 > 全部 7 条 ✅，可进入 Phase 2（`/speckit.tasks`）。
 

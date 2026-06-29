@@ -102,6 +102,23 @@ class Settings(BaseSettings):
     dev_api_key: str = "dev-key"
     dev_user_email: str = "dev@pptagent.local"
 
+    # ── Curated material library (US6 / system-curated extension) ──
+    # When enabled, the importer writes orphan ``slide_assets`` rows
+    # (source_sample_id IS NULL) that are visible to every user with
+    # ``include_orphan=true``. Disabling is purely a safety switch —
+    # the importer script will still run, but rows are tagged with
+    # ``metadata_json.curated=false`` instead.
+    curated_library_enabled: bool = True
+    # Hard cap on how many curated assets one run can insert. Set to 0
+    # for unlimited. Protects the DB when running on huge source trees.
+    curated_library_max_assets_per_run: int = 0
+    # When True the import CLI / admin API will prefer multimodal LLM
+    # classification if an LLM key is configured.
+    curated_library_use_llm: bool = False
+    # Optional override for the multimodal model (e.g. qwen-vl-max).
+    # Defaults to ``llm_model`` when empty.
+    curated_library_multimodal_model: str = ""
+
     # ── Derived helpers ────────────────────────────────────────────
     @field_validator("cors_allow_origins")
     @classmethod

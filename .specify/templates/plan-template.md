@@ -36,8 +36,8 @@ principles before this plan advances. Each item MUST be marked ✅ (compliant),
 ⚠ (compliant with justification), or ❌ (violation requiring remediation):
 
 - **I. 二开优先与资产复用**：所有自研模块 MUST 给出"为何不复用现有 X"的
-  取舍证据；核心生成链路 MUST 复用 SVG-to-PPTX 引擎，Agent 编排 MUST 基
-  于 `AgentScope 2.0`。
+  取舍证据；核心生成链路 MUST 基于 `AgentScope 2.0` 工具调用（LLM 生成
+  SVG 排版 → 渲染为 PPTX），Agent 编排 MUST 基于 `AgentScope 2.0`。
 - **II. MVP 驱动与业务闭环**：本计划交付 MUST 落在当前活跃里程碑
   （M1–M4）范围内，越界项 MUST 拆出或拒绝。
 - **III. AI 生成可解释与可控制**：涉及 LLM 创作 / 改写 / 调样式的能力

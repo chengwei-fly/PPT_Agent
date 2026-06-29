@@ -31,7 +31,7 @@
 
 ## Constitution Compliance
 
-- [x] §I 二开优先：M1 复用 ppt-master、M1 复用 AgentScope 2.0 — 隐含在 §Assumptions 第 2 条
+- [x] §I 二开优先：M1 基于 AgentScope 2.0 工具调用构建生成链路 — 隐含在 §Assumptions 第 2 条
 - [x] §II MVP 驱动：M1–M4 里程碑顺序已在 §Assumptions 第 9 条显式声明
 - [x] §III 可解释可控制：FR-015/016/017 + SC-008/009 直接落地
 - [x] §IV 数据安全前置：FR-008/009/018/019/020 + SC-004/005/006 直接落地

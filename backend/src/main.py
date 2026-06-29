@@ -66,6 +66,7 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
 
     # ─── Routers (registered lazily so missing deps don't crash startup) ─
+    from src.api.admin import router as admin_router
     from src.api.assets import router as assets_router
     from src.api.credentials import router as credentials_router
     from src.api.data_lifecycle import router as data_lifecycle_router
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(assets_router, prefix="/api/v1", tags=["materials"])
     app.include_router(drafts_router, prefix="/api/v1", tags=["drafts"])
     app.include_router(credentials_router, prefix="/api/v1/credentials", tags=["credentials"])
+    app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
 
     return app
 

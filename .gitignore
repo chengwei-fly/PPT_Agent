@@ -96,5 +96,7 @@ frontend/logs/
 .turbo/
 
 # ─── External vendored repos ────────────────────────────────────────
-PPT-Master/
+# Note: previously listed `PPT-Master/` here; the project no longer
+# vendors an external PPTX engine — the rendering library is shipped
+# in-tree under `backend/src/integrations/ppt_engine/`.
 需求方案/
