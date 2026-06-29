@@ -36,6 +36,9 @@ async def get_api_key_from_header(
         return authorization.split(" ", 1)[1].strip()
     if x_api_key:
         return x_api_key.strip()
+    # Dev fallback: use dev-key when no auth header is present
+    if settings.app_env != "production":
+        return settings.dev_api_key
     raise UnauthorizedError("Missing API key (Authorization: Bearer ... or X-Api-Key)")
 
 

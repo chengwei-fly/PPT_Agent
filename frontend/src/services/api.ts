@@ -32,24 +32,17 @@ ensureDevAuth();
 export const api: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE ?? "/api",
   timeout: 30_000,
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${DEV_KEY}`,
+  },
 });
 
 // ── Request interceptor — attach bearer + idempotency keys ─────────
 api.interceptors.request.use((config) => {
-  ensureDevAuth();
-  const authRaw = localStorage.getItem("pptagent.auth");
-  if (authRaw) {
-    try {
-      const { apiKey } = JSON.parse(authRaw) as { apiKey?: string };
-      if (apiKey) {
-        config.headers = config.headers ?? {};
-        config.headers["Authorization"] = `Bearer ${apiKey}`;
-      }
-    } catch {
-      /* ignore */
-    }
-  }
+  config.headers = config.headers ?? {};
+  // Always attach dev key for development
+  config.headers["Authorization"] = `Bearer ${DEV_KEY}`;
   return config;
 });
 
