@@ -88,9 +88,10 @@ function GenerationForm() {
         if (visualStyle) body.visual_style = visualStyle;
         if (communicationMode) body.communication_mode = communicationMode;
       }
-      const resp = await api.post<GenerationTask>("/generations", body);
+      // POST response uses "task_id" (QueuedGenerationResponse), not "id"
+      const resp = await api.post<{ task_id: string; queue_position: number }>("/generations", body);
       toast.success(`已入队，位置 #${resp.data.queue_position ?? "?"}`);
-      navigate(`/generate/${resp.data.id}`);
+      navigate(`/generate/${resp.data.task_id}`);
     } catch {
       // Toast already shown by interceptor
     } finally {

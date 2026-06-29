@@ -51,6 +51,9 @@ dependencies = [
     "pyyaml>=6.0.0",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
+    "psycopg2-binary>=2.9.12",
+    "prometheus-client>=0.25.0",
+    "orjson>=3.11.9",
 ]
 
 [project.optional-dependencies]
@@ -87,8 +90,7 @@ allow-direct-references = true
 # For `pip` / `hatch` users, see backend/scripts/install_local_deps.sh.
 dev-dependencies = []
 
-[[tool.uv.index]]
-# (none — all local)
+# No additional index required — all local dependencies
 
 [tool.ruff]
 line-length = 100

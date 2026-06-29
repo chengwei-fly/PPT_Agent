@@ -11,7 +11,7 @@ from datetime import timedelta
 from typing import BinaryIO
 
 from minio import Minio
-from minio.lifecycleconfig import ExpirationRule, LifecycleConfig
+from minio.lifecycleconfig import Expiration, LifecycleConfig, Rule
 
 from src.core.config import settings
 from src.core.observability import get_logger
@@ -52,7 +52,8 @@ def _ensure_buckets() -> None:
 
 def _set_lifecycle_policy() -> None:
     assert _client is not None
-    rule = ExpirationRule(days=settings.task_retention_days + settings.task_purge_delay_days)
+    exp = Expiration(days=settings.task_retention_days + settings.task_purge_delay_days)
+    rule = Rule(status="Enabled", expiration=exp, rule_id="expire-old-tasks")
     config = LifecycleConfig([rule])
     try:
         _client.set_bucket_lifecycle(settings.s3_bucket_cold, config)

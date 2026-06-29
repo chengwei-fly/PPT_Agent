@@ -35,7 +35,7 @@ async def init_db() -> None:
     if _engine is not None:
         return
     _engine = create_async_engine(
-        settings.database_url,
+        str(settings.database_url),
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
         pool_timeout=settings.db_pool_timeout,
@@ -49,7 +49,7 @@ async def init_db() -> None:
         expire_on_commit=False,
         class_=AsyncSession,
     )
-    logger.info("db_initialized", pool_size=settings.db_pool_size)
+    logger.info("db_initialized pool_size=%d", settings.db_pool_size)
 
 
 async def dispose_db() -> None:

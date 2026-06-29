@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -50,7 +50,7 @@ class GenerationPipeline:
             return
 
         task.status = TaskStatus.running
-        task.started_at = datetime.utcnow()
+        task.started_at = datetime.now(timezone.utc)
         task.current_stage = STAGE_ORDER[0]
         await self.session.commit()
 
@@ -153,7 +153,7 @@ class GenerationPipeline:
         # ── Mark success + compute style fit score ────────────────
         task.result_pptx_path = pptx_payload["pptx_path"]
         task.status = TaskStatus.success
-        task.finished_at = datetime.utcnow()
+        task.finished_at = datetime.now(timezone.utc)
         task.current_stage = None
         # Compute scoring (FR-028 / SC-002)
         layout_score = await LayoutScorer(self.session).score(task_id=task.id)
@@ -564,7 +564,7 @@ class GenerationPipeline:
 
     async def _fail_task(self, task: GenerationTask, error: str) -> None:
         task.status = TaskStatus.failed
-        task.finished_at = datetime.utcnow()
+        task.finished_at = datetime.now(timezone.utc)
         task.error_message = error[:2000]
         await self.session.commit()
         await self._emit_ws(task.id, "failed", "failed", extra={"error": error})
@@ -583,7 +583,7 @@ class GenerationPipeline:
                 "task_id": str(task_id),
                 "stage": stage_or_status,
                 "status": status_value,
-                "ts": datetime.utcnow().isoformat(),
+                "ts": datetime.now(timezone.utc).isoformat(),
                 **(extra or {}),
             },
         )

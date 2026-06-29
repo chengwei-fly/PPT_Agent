@@ -19,6 +19,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
 from pythonjsonlogger import jsonlogger
 
 from src.core.config import settings
@@ -81,12 +82,21 @@ def configure_observability(app: FastAPI) -> None:
         resource = Resource.create({SERVICE_NAME: settings.otel_service_name})
         provider = TracerProvider(
             resource=resource,
-            sampler=trace.sampling.get_sampler(
-                f"{settings.otel_traces_sampler}={settings.otel_traces_sampler_arg}"
-            ),
+            sampler=TraceIdRatioBased(float(settings.otel_traces_sampler_arg)),
         )
-        exporter = OTLPSpanExporter(endpoint=settings.otel_exporter_otlp_endpoint, insecure=True)
-        provider.add_span_processor(BatchSpanProcessor(exporter))
+        # Skip exporter in dev to avoid gRPC hang; set OTEL_EXPORTER_OTLP_ENDPOINT
+        # to a reachable endpoint in production.
+        if settings.app_env not in ("development",):
+            try:
+                exporter = OTLPSpanExporter(
+                    endpoint=settings.otel_exporter_otlp_endpoint,
+                    insecure=True,
+                    timeout=5.0,
+                )
+                provider.add_span_processor(BatchSpanProcessor(exporter))
+            except Exception:
+                _logger = logging.getLogger(settings.log_namespace)
+                _logger.warning("otel_export_init_failed")
         trace.set_tracer_provider(provider)
 
     _initialized = True

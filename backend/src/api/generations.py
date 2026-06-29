@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
@@ -137,7 +137,7 @@ async def create_generation(
         status=TaskStatus.queued,
         estimated_tokens=est.tokens,
         estimated_seconds=est.seconds,
-        queue_deadline_at=datetime.utcnow() + timedelta(seconds=300),
+        queue_deadline_at=datetime.now(timezone.utc) + timedelta(seconds=300),
     )
     session.add(task)
     await session.flush()
@@ -180,6 +180,23 @@ async def create_generation(
     )
 
 
+# ─── Style & mode discovery (MUST be before /{task_id} to avoid route conflict) ──
+@router.get("/styles")
+async def list_visual_styles() -> list[dict[str, str]]:
+    """List available visual styles for general mode."""
+    from src.services.generation.reference_loader import ReferenceLoader
+
+    return ReferenceLoader().list_visual_styles()
+
+
+@router.get("/modes")
+async def list_communication_modes() -> list[dict[str, str]]:
+    """List available communication modes for general mode."""
+    from src.services.generation.reference_loader import ReferenceLoader
+
+    return ReferenceLoader().list_communication_modes()
+
+
 @router.get("/{task_id}", response_model=GenerationResponse)
 async def get_generation(
     task_id: uuid.UUID,
@@ -217,28 +234,52 @@ async def cancel_generation(
     if task.status not in (TaskStatus.queued, TaskStatus.running):
         return  # No-op for already-completed
     task.status = TaskStatus.cancelled
-    task.finished_at = datetime.utcnow()
+    task.finished_at = datetime.now(timezone.utc)
     await session.commit()
     await remove_from_queue(str(task_id))
     await publish_ws_event(
         f"task:{task_id}",
-        {"type": "task.cancelled", "task_id": str(task_id), "ts": datetime.utcnow().isoformat()},
+        {"type": "task.cancelled", "task_id": str(task_id), "ts": datetime.now(timezone.utc).isoformat()},
     )
     logger.info("generation_cancelled", task_id=str(task_id), user_id=str(user.id))
 
 
-# ─── Style & mode discovery ────────────────────────────────────────
-@router.get("/styles")
-async def list_visual_styles() -> list[dict[str, str]]:
-    """List available visual styles for general mode."""
-    from src.services.generation.reference_loader import ReferenceLoader
+# ─── Download ───────────────────────────────────────────────────────
+@router.get("/{task_id}/download")
+async def download_pptx(
+    task_id: uuid.UUID,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Download the generated PPTX file (FR-005)."""
+    from fastapi.responses import RedirectResponse
 
-    return ReferenceLoader().list_visual_styles()
+    result = await session.execute(
+        select(GenerationTask).where(
+            GenerationTask.id == task_id, GenerationTask.owner_id == user.id
+        )
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise NotFoundError("GenerationTask", str(task_id))
+    if not task.result_pptx_path:
+        raise PPTagentError(
+            code="PPTAGENT.NO_RESULT",
+            message="PPTX not yet generated",
+            status_code=404,
+        )
 
-
-@router.get("/modes")
-async def list_communication_modes() -> list[dict[str, str]]:
-    """List available communication modes for general mode."""
-    from src.services.generation.reference_loader import ReferenceLoader
-
-    return ReferenceLoader().list_communication_modes()
+    # Parse s3://bucket/key path
+    path = task.result_pptx_path
+    if path.startswith("s3://"):
+        _, _, rest = path.partition("s3://")
+        bucket, _, key = rest.partition("/")
+        from src.storage.minio import presign_url
+        url = presign_url(bucket, key, expires=3600)
+        return RedirectResponse(url=url)
+    else:
+        raise PPTagentError(
+            code="PPTAGENT.INVALID_PATH",
+            message="Invalid result path",
+            status_code=500,
+        )

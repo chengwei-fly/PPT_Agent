@@ -14,7 +14,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - D:/docker-data/postgres:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pptagent -d pptagent"]
@@ -28,7 +28,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - D:/docker-data/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,7 +46,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - D:/docker-data/minio:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -105,15 +105,11 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
-      - grafana_data:/var/lib/grafana
+      - D:/docker-data/grafana:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/sla-dashboard.json:/var/lib/grafana/dashboards/sla-dashboard.json:ro
       - ./grafana/material-usage.json:/var/lib/grafana/dashboards/material-usage.json:ro
     depends_on:
       - prometheus
 
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
-  grafana_data:
+# Volumes use bind mounts to D:\docker-data\ (configured above per-service)

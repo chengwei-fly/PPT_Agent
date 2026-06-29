@@ -57,6 +57,7 @@ class Draft(Base, TimestampMixin):
     lock_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    owner = relationship("User", back_populates="drafts")
     slides = relationship(
         "DraftSlide",
         back_populates="draft",

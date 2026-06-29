@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -38,7 +38,7 @@ async def process_generation_task(task_id: str, owner_id: str) -> None:
             if task.status not in (TaskStatus.queued, TaskStatus.running):
                 logger.info("worker_task_skip", task_id=task_id, status=task.status.value)
                 return
-            if task.queue_deadline_at and task.queue_deadline_at < datetime.utcnow():
+            if task.queue_deadline_at and task.queue_deadline_at < datetime.now(timezone.utc):
                 task.status = TaskStatus.cancelled
                 task.error_message = "Queue deadline exceeded (5min)"
                 await session.commit()
@@ -57,7 +57,7 @@ async def process_generation_task(task_id: str, owner_id: str) -> None:
             if task:
                 task.status = TaskStatus.failed
                 task.error_message = "Generation exceeded 5min timeout (SC-001)"
-                task.finished_at = datetime.utcnow()
+                task.finished_at = datetime.now(timezone.utc)
                 await session.commit()
     except Exception as e:
         logger.exception("worker_failed", task_id=task_id, error=str(e))

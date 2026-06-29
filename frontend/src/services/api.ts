@@ -7,6 +7,28 @@ import { toast } from "sonner";
  * - Auth via `Authorization: Bearer <dev-key>` (stored in zustand)
  * - Surfaces RFC 7807 errors as toast messages
  */
+
+const DEV_KEY = "dev-key";
+const DEV_EMAIL = "dev@pptagent.local";
+
+// Ensure dev credentials are always available
+function ensureDevAuth(): void {
+  const raw = localStorage.getItem("pptagent.auth");
+  if (!raw) {
+    localStorage.setItem("pptagent.auth", JSON.stringify({ apiKey: DEV_KEY, email: DEV_EMAIL }));
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw) as { apiKey?: string };
+    if (!parsed.apiKey) {
+      localStorage.setItem("pptagent.auth", JSON.stringify({ apiKey: DEV_KEY, email: DEV_EMAIL }));
+    }
+  } catch {
+    localStorage.setItem("pptagent.auth", JSON.stringify({ apiKey: DEV_KEY, email: DEV_EMAIL }));
+  }
+}
+ensureDevAuth();
+
 export const api: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE ?? "/api",
   timeout: 30_000,
@@ -15,6 +37,7 @@ export const api: AxiosInstance = axios.create({
 
 // ── Request interceptor — attach bearer + idempotency keys ─────────
 api.interceptors.request.use((config) => {
+  ensureDevAuth();
   const authRaw = localStorage.getItem("pptagent.auth");
   if (authRaw) {
     try {
