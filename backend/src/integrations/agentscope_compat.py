@@ -127,86 +127,234 @@ class Tool:
 # ReActAgent — LLM-driven tool selection loop
 # ─────────────────────────────────────────────────────────────────────
 class ReActAgent(_AgentScopeAgent):
-    """ReAct loop over an AgentScope-style tool list.
-
-    Concrete LLM wiring is left to the orchestrator (the orchestrator
-    knows which model + prompt template to use); this class owns the
-    loop: Thought → Action → Observation → repeat until done.
+    """Production ReAct loop over an AgentScope-style tool list.
 
     Parameters
     ----------
     name:
         Agent identifier (passed up to AgentScope base).
     tools:
-        List of `Tool` instances the LLM may call.
+        Either a list of `Tool` instances OR a mapping of
+        ``{name: async_callable}`` for tools that accept a
+        context object (the production PPTagent path).
     model:
-        Async callable `(messages) -> str` (or to a `Tool` request).
-        If `None`, the agent runs in *stub* mode: it returns the
-        first tool's result directly, which is enough for tests and
-        for the fallback code path. Production wiring replaces this
-        with a real LLM client.
+        Async callable that takes ``(system, messages, tool_schemas)``
+        and returns a dict with one of:
+          * ``{"type": "tool_call", "name": str, "arguments": dict}``
+          * ``{"type": "final", "content": str}``
+        If ``None``, the agent runs in *stub* mode (tests only).
+    system_prompt:
+        Optional system prompt passed on every LLM call.
     max_steps:
-        Hard cap on ReAct iterations (default 8).
+        Hard cap on ReAct iterations (default 16).
+    middleware:
+        Optional list of async callables ``(event_name, payload)`` for
+        trace / PII / behavior middleware (Constitution §V).
     """
 
     def __init__(
         self,
         name: str = "pptagent_react",
-        tools: list[Tool] | None = None,
-        model: Callable[[list[dict[str, Any]]], Awaitable[Any]] | None = None,
-        max_steps: int = 8,
+        tools: list[Tool] | dict[str, Any] | None = None,
+        model: Callable[..., Awaitable[Any]] | None = None,
+        system_prompt: str = "",
+        max_steps: int = 16,
+        middleware: list[Callable[[str, dict[str, Any]], Awaitable[None]]] | None = None,
         **kwargs: Any,
     ) -> None:
         if not AGENTSCOPE_AVAILABLE:
-            super().__init__(name=name, **kwargs)  # raises actionable error
+            # Stub mode: AgentScope is not installed, but the
+            # ``agentscope.agent.Agent`` parent may still demand
+            # system_prompt / model positionally. Pass them through
+            # to keep the stub importable for tests.
+            super().__init__(  # type: ignore[misc]
+                name=name,
+                system_prompt=system_prompt,
+                model=model,
+                **kwargs,
+            )
         else:
-            super().__init__(name=name, **kwargs)
-        self.tools: dict[str, Tool] = {t.name: t for t in (tools or [])}
+            super().__init__(name=name, system_prompt=system_prompt, model=model, **kwargs)
+        # Normalize tool registry. Two shapes are supported:
+        #   1) list[Tool]  — used by tests / external integrations
+        #   2) dict[name, callable] — production path: tools receive a
+        #      ToolContext (first positional) and **kwargs from the LLM.
+        if isinstance(tools, dict):
+            self._tool_funcs: dict[str, Callable[..., Awaitable[Any]]] = tools
+            self.tools: dict[str, Tool] = {}  # type: ignore[assignment]
+        else:
+            self._tool_funcs = {}
+            self.tools = {t.name: t for t in (tools or [])}  # type: ignore[assignment]
         self.model = model
+        self.system_prompt = system_prompt
         self.max_steps = max_steps
+        self.middleware = middleware or []
         self._trace: list[dict[str, Any]] = []
 
     def register_tool(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
 
+    def register_function(self, name: str, func: Callable[..., Awaitable[Any]]) -> None:
+        """Register a tool function that takes ToolContext + kwargs."""
+        self._tool_funcs[name] = func
+
     @property
     def trace(self) -> list[dict[str, Any]]:
         return list(self._trace)
 
-    async def invoke(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        """Run the ReAct loop and return the final assistant message + trace."""
+    def available_tool_names(self) -> list[str]:
+        """All tools visible to the LLM (function-style + Tool-style)."""
+        names = set(self._tool_funcs.keys()) | set(self.tools.keys())
+        return sorted(names)
+
+    def tool_schemas(self) -> list[dict[str, Any]]:
+        """Return JSON schemas for ALL registered tools.
+
+        For function-style tools, the schema is supplied externally
+        via the orchestrator (since the callable signature is opaque
+        to us). For Tool-style, we use Tool.to_schema().
+        """
+        schemas: list[dict[str, Any]] = []
+        for t in self.tools.values():
+            schemas.append(t.to_schema())
+        # Function-style schemas are added via ``extra_schemas`` in
+        # invoke() — the orchestrator knows the JSON shapes.
+        return schemas
+
+    async def _emit(self, event_name: str, payload: dict[str, Any]) -> None:
+        """Run an event through the middleware chain."""
+        for mw in self.middleware:
+            try:
+                await mw(event_name, payload)
+            except Exception as e:  # pragma: no cover
+                logger.warning(
+                    "middleware_error",
+                    event=event_name,
+                    error=str(e),
+                )
+
+    async def _dispatch(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        context: Any = None,
+    ) -> Any:
+        """Call a registered tool. Returns the tool's return value."""
+        if name in self._tool_funcs:
+            func = self._tool_funcs[name]
+            if context is not None:
+                return await func(context, **arguments)
+            return await func(**arguments)
+        if name in self.tools:
+            return await self.tools[name](**arguments)
+        raise KeyError(f"unknown tool: {name}")
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        context: Any = None,
+        extra_schemas: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Run the ReAct loop and return the final assistant message + trace.
+
+        ``context`` is the first positional arg passed to function-style
+        tools (e.g. ``ToolContext``). ``extra_schemas`` supplies the JSON
+        shapes for function-style tools so the LLM knows how to call them.
+        """
         messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+        schemas = self.tool_schemas() + list(extra_schemas or [])
+
         for step in range(self.max_steps):
             self._trace.append({"step": step, "messages_count": len(messages)})
+            await self._emit(
+                "react.step",
+                {"step": step, "messages": len(messages), "tools": self.available_tool_names()},
+            )
+
             if self.model is None:
-                # Stub mode: pick the first tool deterministically.
-                if not self.tools:
+                # Stub mode: pick the first available tool deterministically.
+                if not self.available_tool_names():
                     return {"content": "", "trace": self.trace, "stub": True}
-                tool_name = next(iter(self.tools))
-                tool = self.tools[tool_name]
-                # Heuristic: pass the raw prompt as the only string field.
-                observation = await tool(prompt=prompt, **kwargs)
+                tool_name = self.available_tool_names()[0]
+                tool_args = kwargs or {"prompt": prompt}
+                observation = await self._dispatch(tool_name, tool_args, context=context)
                 return {
                     "content": json.dumps(observation, default=str)[:2000],
                     "trace": self.trace,
                     "stub": True,
                     "tool": tool_name,
                 }
-            # Real model path: model returns either a message or a
-            # tool-call request; we let the model object decide.
-            response = await self.model(messages)
-            messages.append({"role": "assistant", "content": str(response)})
+
+            # Real model path
+            response = await self.model(
+                system=self.system_prompt,
+                messages=messages,
+                tools=schemas,
+            )
+
             if isinstance(response, dict) and response.get("type") == "tool_call":
-                tool_name = response["name"]
-                tool = self.tools.get(tool_name)
-                if tool is None:
-                    messages.append({"role": "tool", "content": f"unknown tool: {tool_name}"})
-                    continue
-                observation = await tool(**response.get("arguments", {}))
-                messages.append({"role": "tool", "content": json.dumps(observation, default=str)})
+                tool_name = response.get("name") or ""
+                tool_args = response.get("arguments") or {}
+                self._trace.append(
+                    {"step": step, "tool_call": tool_name, "args_keys": list(tool_args.keys())}
+                )
+                await self._emit(
+                    "tool_invocation",
+                    {
+                        "step": step,
+                        "name": tool_name,
+                        "arguments": tool_args,
+                    },
+                )
+                try:
+                    observation = await self._dispatch(tool_name, tool_args, context=context)
+                except Exception as e:
+                    logger.exception("tool_call_failed", tool=tool_name, error=str(e))
+                    observation = {"error": repr(e), "tool": tool_name}
+                    await self._emit(
+                        "tool_error",
+                        {"step": step, "name": tool_name, "error": str(e)},
+                    )
+
+                messages.append({"role": "assistant", "content": json.dumps(response, default=str)})
+                messages.append(
+                    {
+                        "role": "tool",
+                        "name": tool_name,
+                        "content": json.dumps(observation, default=str)[:8000],
+                    }
+                )
+                await self._emit(
+                    "tool_result",
+                    {
+                        "step": step,
+                        "name": tool_name,
+                        "observation_keys": (
+                            list(observation.keys())
+                            if isinstance(observation, dict)
+                            else type(observation).__name__
+                        ),
+                    },
+                )
                 continue
-            return {"content": str(response), "trace": self.trace}
-        return {"content": "", "trace": self.trace, "stopped_reason": "max_steps"}
+
+            # Final answer
+            final_content = response.get("content", str(response)) if isinstance(response, dict) else str(response)
+            messages.append({"role": "assistant", "content": str(final_content)})
+            await self._emit("react.final", {"step": step, "content_preview": str(final_content)[:200]})
+            return {"content": str(final_content), "trace": self.trace, "messages": messages}
+
+        # Hit max_steps — surface a synthetic final answer so callers
+        # can still pick up state from the messages log.
+        await self._emit("react.max_steps", {"max_steps": self.max_steps})
+        return {
+            "content": "",
+            "trace": self.trace,
+            "messages": messages,
+            "stopped_reason": "max_steps",
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────

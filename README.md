@@ -102,6 +102,10 @@ uv run pytest tests/contract                # Contract tests
 uv run pytest tests/integration             # Integration tests
 uv run pytest tests/integration/test_token_budget.py  # Token budget (SC-001)
 
+# ReAct agent — stub LLM, no API key needed
+uv run python -m src.scripts.smoke_react    # 5/15/30/50-page e2e + checkpoint + dynamic timeout
+```
+
 # Frontend
 cd frontend
 pnpm run test            # Vitest unit tests
@@ -117,7 +121,37 @@ pnpm run gen:api         # Generate TypeScript API client from OpenAPI spec
 
 ## Architecture
 
-### Generation Pipeline
+### Generation Pipeline (ReAct-driven)
+
+```
+User prompt
+   │
+   ▼
+┌────────────────────────────────────────────────────────────┐
+│             OrchestratorAgent (src/agents/orchestrator.py) │
+│   ReAct loop: LLM decides tool order (Thought→Action→Obs)  │
+└────────────────────────────────────────────────────────────┘
+   │
+   ▼ LLM sees 6 tools (build_tool_schemas)
+   ┌────────────┬──────────────┬──────────────┬──────────────┐
+   │plan_outline│enrich_points │render_svg_   │  redo_slide  │ …
+   │            │              │ batch (×N)   │              │
+   └────────────┴──────────────┴──────────────┴──────────────┘
+   │
+   ▼
+package_pptx  ──►  PPTX renderer  ──►  MinIO (.pptx)
+```
+
+**Key properties:**
+- **LLM-decided order** — the LLM picks the next tool, not a hard-coded 4-stage harness
+- **Parallel SVG rendering** — `REACT_SVG_PARALLELISM=4` concurrent LLM calls per batch
+- **Checkpoint + resume** — every batch persists to `GenerationTask.rendered_slides` so worker restarts skip already-rendered pages
+- **Dynamic timeout** — `timeout = clamp(60 + 3×page_count, 120, 2400)` (50 pages → 210s, 100+ pages capped at 2400s)
+- **Idempotent tools** — `render_svg_batch(..., batch_id=…)` collapses retries
+
+See [docs/REACT_REFACTOR.md](docs/REACT_REFACTOR.md) for the full migration notes.
+
+### Generation Pipeline (legacy, deprecated)
 
 ```
 User prompt → Outline → Points → SVG → PPTX
@@ -125,6 +159,10 @@ User prompt → Outline → Points → SVG → PPTX
             Knowledge   ReAct Agent  PPTX
             Retriever   (LLM calls)  Renderer
 ```
+
+The legacy `src/services/generation/pipeline.py:GenerationPipeline` is kept as a
+back-compat shim and forwards to `OrchestratorAgent`. New work should target
+the ReAct orchestrator directly.
 
 ### Key Technologies
 

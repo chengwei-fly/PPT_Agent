@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, FileText, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
+import { Trash2, FileText, RefreshCw, AlertTriangle, Loader2, FileStack, Images } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
@@ -14,24 +14,27 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/services/api";
 import { formatBytes, formatLocalDateTime } from "@/lib/utils";
 import type { ParseStatus, Sample } from "@/types/api";
 import { UploadDropzone } from "@/components/knowledge/UploadDropzone";
 import { PiiBadge, PiiDetail } from "@/components/knowledge/PiiBadge";
+import { MaterialAssetsTab } from "@/components/knowledge/MaterialAssetsTab";
 import { useSampleUpload } from "@/hooks/useSampleUpload";
 
-/** T068 — US2 knowledge base management page.
+/** T068 — US2 RAG 知识库统一管理页。
  *
- * Layout:
- *   - Top: UploadDropzone + live progress of in-flight batch
- *   - Middle: Sample list table (filename, type, parse status, PII badge, size, uploaded_at, actions)
- *   - Empty state: prompt to upload first samples
+ * 整合后包含两个子库：
+ *   - 「文档」: 用户上传 PPTX/PDF/DOCX，系统解析文本与版式并向量化，用于风格对齐 + 内容 RAG 召回
+ *   - 「素材资产」: 精选共享库 + 用户样本的视觉单页素材，用于生成时复用视觉资产
  *
- * Refetch strategy:
- *   - Stale-while-revalidate on focus
- *   - Manual refresh button
- *   - Auto-refetch every 10s while any row is in `pending` / `parsing`
+ * 二者共用同一个 Embedder，但底层表不同（samples/embeddings vs slide_assets），
+ * 检索侧由后端 KnowledgeRetriever（文本）+ MaterialSearchService（视觉）提供。
+ *
+ * 行为:
+ *   - 解析中样本自动轮询刷新（10s 间隔）
+ *   - 上传后 SHA-256 自动去重；删除为软删除（30 天保留后清理）
  */
 
 const PARSE_STATUS_LABEL: Record<ParseStatus, string> = {
@@ -54,7 +57,46 @@ const FILE_TYPE_LABEL: Record<Sample["file_type"], string> = {
   docx: "DOCX",
 };
 
+type KnowledgeTab = "documents" | "assets";
+
 export default function KnowledgePage() {
+  const [tab, setTab] = useState<KnowledgeTab>("documents");
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold">知识库</h1>
+          <p className="text-sm text-muted-foreground">
+            构建 RAG 知识库：上传文档以提取内容与风格，导入或抽取视觉资产以复用版式
+          </p>
+        </div>
+      </div>
+
+      <Tabs value={tab} onValueChange={(v) => setTab(v as KnowledgeTab)}>
+        <TabsList>
+          <TabsTrigger value="documents" className="gap-1.5">
+            <FileStack className="h-3.5 w-3.5" />
+            文档
+          </TabsTrigger>
+          <TabsTrigger value="assets" className="gap-1.5">
+            <Images className="h-3.5 w-3.5" />
+            素材资产
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="documents">
+          <DocumentsTab />
+        </TabsContent>
+        <TabsContent value="assets">
+          <MaterialAssetsTab />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+/** 「文档」Tab — 样本上传、解析状态、PII 处置、删除（原 KnowledgePage 内容） */
+function DocumentsTab() {
   const qc = useQueryClient();
   const [detailSample, setDetailSample] = useState<Sample | null>(null);
   const { items, inProgress, upload, reset } = useSampleUpload();
@@ -117,7 +159,7 @@ export default function KnowledgePage() {
       {/* ── Upload area ───────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle>知识库管理</CardTitle>
+          <CardTitle>上传文档</CardTitle>
           <CardDescription>
             上传 PPTX / PDF / DOCX 样本，系统会解析文本与版式并提取风格特征，用于生成时的风格对齐与双模检索。
           </CardDescription>
@@ -164,7 +206,7 @@ export default function KnowledgePage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
-            <CardTitle className="text-base">已上传样本 ({visibleSamples.length})</CardTitle>
+            <CardTitle className="text-base">已上传文档 ({visibleSamples.length})</CardTitle>
             <CardDescription>
               同一文件 SHA-256 已自动去重；删除为软删除（30 天保留后清理）。
             </CardDescription>

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { to: "/generate", label: "生成 PPT" },
   { to: "/knowledge", label: "知识库" },
-  { to: "/materials", label: "素材库" },
   { to: "/drafts", label: "方案草稿" },
   { to: "/preferences", label: "我的偏好" },
   { to: "/settings", label: "模型设置" },

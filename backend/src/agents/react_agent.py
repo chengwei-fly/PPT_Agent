@@ -1,113 +1,60 @@
-"""ReActAgent — LLM-driven content-generation agent.
+"""DEPRECATED — legacy ReActAgent wrapper (M-evolve: superseded by OrchestratorAgent).
 
-Inherits from `agentscope.agent.Agent` and registers tools the
-LLM can call:
+⚠ This module is the LEGACY ReAct wrapper and is NO LONGER the
+production code path. It is kept here only for back-compat with
+test fixtures / external scripts that still import ``ReActAgent``
+from ``src.agents.react_agent``.
 
-  - `knowledge_retriever` — pull top-k chunks from the user's KB
-  - `pptx_renderer`       — package SVGs into a final PPTX
+The new ReAct-driven orchestrator lives in
+``src.agents.orchestrator.OrchestratorAgent`` (which delegates the
+inner ReAct loop to ``src.integrations.agentscope_compat.ReActAgent``)
+and is invoked by ``src.scheduler.worker.process_generation_task``.
+
+This file is now a thin re-export shim. New work should target
+``src.agents.orchestrator.OrchestratorAgent`` directly.
 """
 
 from __future__ import annotations
 
-import uuid
-from typing import Any
+import warnings
 
-from src.core.observability import get_logger
 from src.integrations.agentscope_compat import (
     AGENTSCOPE_AVAILABLE,
-    Tool,
+    ReActAgent as _CompatReActAgent,
 )
-from src.integrations.agentscope_compat import (
-    ReActAgent as _BaseReActAgent,
+from src.integrations.agentscope_compat import Tool as _CompatTool
+
+warnings.warn(
+    "src.agents.react_agent.ReActAgent is deprecated; use "
+    "src.agents.orchestrator.OrchestratorAgent instead.",
+    DeprecationWarning,
+    stacklevel=2,
 )
-from src.tools.knowledge_retriever import KnowledgeRetriever
-from src.tools.pptx_renderer import PPTXRenderTool
-
-logger = get_logger("react_agent")
 
 
-class ReActAgent:
-    """PPTagent's LLM-driven content-generation agent.
+class ReActAgent:  # pragma: no cover - legacy shim
+    """Deprecated. Use :class:`src.agents.orchestrator.OrchestratorAgent`."""
 
-    This is a thin wrapper that:
-
-      1. Owns the underlying AgentScope ReActAgent (inherits from
-         `agentscope.agent.Agent` via `agentscope_compat`).
-      2. Registers the four content-stage tools.
-      3. Exposes a stable PPTagent-facing API (`run`, `set_retrieval`)
-         that the orchestrator and tests use.
-    """
-
-    def __init__(self, owner_id: uuid.UUID) -> None:
-        self.owner_id = owner_id
-        self._kb = KnowledgeRetriever(owner_id=owner_id)
-        self._pptx_renderer = PPTXRenderTool()
-
-        # Build the AgentScope ReActAgent. If the local AgentScope
-        # import failed, `_BaseReActAgent.__init__` raises an
-        # actionable error directing the user to run
-        # `install_local_deps.sh`.
-        self._react = _BaseReActAgent(
-            name="pptagent_react",
-            tools=[
-                Tool(
-                    name="knowledge_retriever",
-                    description=(
-                        "Pull top-k relevant chunks from the user's "
-                        "knowledge base for the current prompt."
-                    ),
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string"},
-                            "top_k": {"type": "integer", "default": 5},
-                        },
-                        "required": ["query"],
-                    },
-                    func=self._kb.retrieve_async,
-                ),
-                Tool(
-                    name="pptx_renderer",
-                    description=(
-                        "Package a list of slide SVGs into a final PPTX. "
-                        "Converts SVG slides to PPTX format."
-                    ),
-                    parameters=self._pptx_renderer.parameters,
-                    func=self._pptx_renderer.func,
-                ),
-            ],
+    def __init__(self, owner_id) -> None:
+        warnings.warn(
+            "ReActAgent from src.agents.react_agent is deprecated. "
+            "The new ReAct orchestrator is "
+            "src.agents.orchestrator.OrchestratorAgent.",
+            DeprecationWarning,
+            stacklevel=2,
         )
-        if AGENTSCOPE_AVAILABLE:
-            logger.info(
-                "react_agent_built_on_local_agentscope",
-                tools=list(self._react.tools),
-            )
+        self.owner_id = owner_id
+        # No-op compatibility: preserve attribute access patterns of the
+        # old API so external imports don't crash, but route to the
+        # new compat ReActAgent underneath. No tools are registered.
+        self._react = _CompatReActAgent(name="pptagent_react_legacy", tools=[])
 
-    @property
-    def agentscope_agent(self) -> _BaseReActAgent:
-        """Direct access to the underlying AgentScope ReActAgent.
-
-        Useful for tests and for advanced wiring (custom model
-        callable, custom middleware, etc.).
-        """
-        return self._react
-
-    async def run(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        """Run the ReAct loop and return the result + trace."""
+    async def run(self, prompt: str, **kwargs):  # pragma: no cover - legacy
         return await self._react.invoke(prompt, **kwargs)
 
-    # ── Convenience pass-throughs used by the orchestrator ─────────
-    async def retrieve(self, query: str, top_k: int = 5) -> list[Any]:
-        return await self._kb.retrieve_async(query=query, top_k=top_k)
-
-    def set_retrieval(self, hits: list[Any]) -> None:
-        """Compatibility shim — the orchestrator pre-fetches hits
-        and shoves them onto the agent."""
-        self._last_retrieval = hits
-
     @property
-    def trace(self) -> list[dict[str, Any]]:
+    def trace(self):  # pragma: no cover - legacy
         return self._react.trace
 
 
-__all__ = ["ReActAgent"]
+__all__ = ["ReActAgent", "AGENTSCOPE_AVAILABLE"]

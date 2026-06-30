@@ -82,6 +82,11 @@ class GenerationTask(Base, TimestampMixin):
     source_file_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(GUID()), nullable=False, default=list
     )
+    # Agent state checkpoint (M-evolve: survive worker restart)
+    # Stores the latest outline / points / rendered_slides so a
+    # restarted worker can resume from the last successful batch.
+    agent_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    rendered_slides: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
 
     owner = relationship("User", back_populates="generation_tasks")
     trace_stages = relationship(

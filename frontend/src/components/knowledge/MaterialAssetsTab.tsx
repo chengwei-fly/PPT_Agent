@@ -25,6 +25,17 @@ import {
   Layers,
 } from "lucide-react";
 
+/** 知识库 · 素材资产 Tab（整合自原 MaterialLibraryPage）。
+ *
+ * RAG 知识库的两个子库之一：视觉素材子库。
+ * - "精选库"（curated）：管理员通过 `/admin/material-library/import` 灌入
+ * - "我的素材"（mine）：本用户上传样本时由 pipeline 自动抽取
+ * - "全部"（all）：合并视图
+ *
+ * 双路检索（BM25 + 嵌入向量）由后端 MaterialSearchService 提供；
+ * 与文本块检索（KnowledgeRetriever）共用同一个 Embedder。
+ */
+
 const VISUAL_TYPES = [
   { value: "cover", label: "封面" },
   { value: "toc", label: "目录" },
@@ -53,7 +64,7 @@ const TYPE_LABELS: Record<string, string> = {
   mixed: "综合",
 };
 
-export default function MaterialLibraryPage() {
+export function MaterialAssetsTab() {
   const [scope, setScope] = useState<MaterialScope>("curated");
   const [query, setQuery] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -89,11 +100,11 @@ export default function MaterialLibraryPage() {
   const assets = data?.items ?? [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">素材库</h1>
+          <h2 className="text-base font-semibold">素材资产</h2>
           <p className="text-sm text-muted-foreground">
             精选共享库 + 我的样本页素材，按类型、行业、关键词检索
           </p>

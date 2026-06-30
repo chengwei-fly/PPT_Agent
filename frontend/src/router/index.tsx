@@ -8,7 +8,6 @@ const PreferencesPage = lazy(() => import("@/pages/PreferencesPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const TracePage = lazy(() => import("@/pages/TracePage"));
 const SecurityPage = lazy(() => import("@/pages/SecurityPage"));
-const MaterialLibraryPage = lazy(() => import("@/pages/MaterialLibraryPage"));
 const DraftListPage = lazy(() => import("@/pages/DraftListPage"));
 const DraftEditorPage = lazy(() => import("@/pages/DraftEditorPage"));
 
@@ -30,7 +29,8 @@ export function AppRouter() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/trace/:taskId" element={<TracePage />} />
         <Route path="/security" element={<SecurityPage />} />
-        <Route path="/materials" element={<MaterialLibraryPage />} />
+        {/* 旧素材库路由 — 已整合进 /knowledge 的"素材资产" Tab */}
+        <Route path="/materials" element={<Navigate to="/knowledge" replace />} />
         <Route path="/drafts" element={<DraftListPage />} />
         <Route path="/drafts/:draftId" element={<DraftEditorPage />} />
         <Route path="*" element={<Navigate to="/generate" replace />} />

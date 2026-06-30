@@ -87,6 +87,15 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.2
+    # LLMClient retry budget (Constitution §I — production agent)
+    llm_max_retries: int = 3
+    # ReAct agent parallelism / batching (M-svg + M-evolve)
+    react_svg_parallelism: int = 4  # concurrent LLM calls in svg_batch_tool
+    react_svg_batch_size: int = 5  # slides per batch (each batch = 1 LLM call)
+    # Worker timeout: dynamic by page count, formula = base + per_page * per_page_secs
+    generation_timeout_base_seconds: int = 60
+    generation_timeout_per_page_seconds: float = 3.0
+    generation_timeout_max_seconds: int = 2400  # 40min hard ceiling for 50+ pages
 
     # ── CORS ───────────────────────────────────────────────────────
     cors_allow_origins: str = "http://localhost:5173,http://localhost:3000"
